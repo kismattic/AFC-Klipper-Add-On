@@ -352,13 +352,12 @@ class AFCSpool:
 
                 except Exception as e:
                     self.afc.error.AFC_error("Error when trying to get Spoolman data for ID:{}, Error: {}".format(SpoolID, e), False)
-            else:
+            elif not cur_lane.remember_spool:
                 self.clear_values(cur_lane)
-        else:
+        elif not cur_lane.remember_spool:
             # Clears out values if users are not using spoolman, this is to cover this function being called from LANE UNLOAD and clearing out
             # Manually entered information
-            # self.clear_values(cur_lane)
-            self.logger.info("Lane values maintained?")
+            self.clear_values(cur_lane)
         if save_vars: self.afc.save_vars()
 
     cmd_SET_RUNOUT_help = "Set runout lane"
