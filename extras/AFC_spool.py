@@ -283,8 +283,9 @@ class AFCSpool:
         Helper function for setting lane spool values
         """
         # set defaults if there's no spool id, or the spoolman lookup fails
-        cur_lane.material = self.afc.default_material_type
-        cur_lane.weight = 1000 # Defaulting weight to 1000 upon load
+        if not cur_lane.remember_spool:
+            cur_lane.material = self.afc.default_material_type
+            cur_lane.weight = 1000 # Defaulting weight to 1000 upon load
 
         if self.afc.spoolman is not None and self.next_spool_id is not None:
             spool_id = self.next_spool_id
