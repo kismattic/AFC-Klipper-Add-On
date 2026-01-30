@@ -348,7 +348,8 @@ class AFCSpool:
         else:
             # Clears out values if users are not using spoolman, this is to cover this function being called from LANE UNLOAD and clearing out
             # Manually entered information
-            self.clear_values(cur_lane)
+            # self.clear_values(cur_lane)
+            self.logger.info("Lane values maintained?")
         if save_vars: self.afc.save_vars()
 
     cmd_SET_RUNOUT_help = "Set runout lane"
