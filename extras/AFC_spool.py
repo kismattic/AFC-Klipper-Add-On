@@ -286,7 +286,7 @@ class AFCSpool:
             self.logger.info("No LANE Defined")
             return
 
-        remember_spool = bool(gcmd.get_int("REMEMBER_SPOOL", lane.remember_spool, minval=0, maxval=1))
+        remember_spool = bool(gcmd.get_int("REMEMBER_SPOOL", 0, minval=0, maxval=1))
 
         if lane.lower() == 'all':
             for lane in self.afc.lanes.values():
