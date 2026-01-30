@@ -63,7 +63,7 @@ class afcBoxTurtle(afcUnit):
         if not cur_lane.prep_state:
             if not cur_lane.load_state:
                 self.afc.function.afc_led(cur_lane.led_not_ready, cur_lane.led_index)
-                msg += 'EMPTY READY FOR SPOOL'
+                msg += 'EMPTY READY FOR SPOOL, color {}'.format(cur_lane.color)
             else:
                 self.afc.function.afc_led(cur_lane.led_fault, cur_lane.led_index)
                 msg +="<span class=error--text> NOT READY</span>"
