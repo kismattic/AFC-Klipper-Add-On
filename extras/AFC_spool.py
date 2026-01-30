@@ -46,7 +46,7 @@ class AFCSpool:
         self.gcode.register_mux_command('SET_SPOOL_ID',         "LANE", lane_obj.name, self.cmd_SET_SPOOL_ID,           desc=self.cmd_SET_SPOOL_ID_help)
         self.gcode.register_mux_command('SET_RUNOUT',           "LANE", lane_obj.name, self.cmd_SET_RUNOUT,             desc=self.cmd_SET_RUNOUT_help)
         self.gcode.register_mux_command('SET_MAP',              "LANE", lane_obj.name, self.cmd_SET_MAP,                desc=self.cmd_SET_MAP_help)
-        self.gcode.register_mux_command('SET_REMEMBER_SPOOL',   "LANE", lane_obj.name, self.cmd_SET_REMEMBER_SPOOL,     desc=self.cmd_SET_MAP_help)
+        self.gcode.register_mux_command('SET_REMEMBER_SPOOL',                          self.cmd_SET_REMEMBER_SPOOL,     desc=self.cmd_SET_REMEMBER_SPOOL_help)
 
     cmd_SET_MAP_help = "Changes T(n) mapping for a lane"
     def cmd_SET_MAP(self, gcmd):
@@ -265,7 +265,7 @@ class AFCSpool:
             if cur_lane.name == self.afc.current:
                 self.set_active_spool(cur_lane.spool_id)
 
-    cmd_SET_SPOOL_ID_help = "Set lane to remember ejected spool"
+    cmd_SET_REMEMBER_SPOOL_help = "Set lane to remember ejected spool"
     def cmd_SET_REMEMBER_SPOOL(self, gcmd):
         """
         This function handles enabling/disabling the functionality to remember a spool after ejecting for a specified lane. It retrieves the lane
