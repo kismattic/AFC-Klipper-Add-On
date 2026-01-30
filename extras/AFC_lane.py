@@ -760,7 +760,6 @@ class AFCLane:
                     self._perform_pause_runout()
             elif not prep_state:
                 # Filament is unloaded
-                self.logger.info("yes it ran this not prep state thing")
                 self.tool_loaded = False
                 self.status = AFCLaneState.NONE
                 self.loaded_to_hub = False
