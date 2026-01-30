@@ -760,11 +760,13 @@ class AFCLane:
                     self._perform_pause_runout()
             elif not prep_state:
                 # Filament is unloaded
+                self.logger.info("yes it ran this not prep state thing")
                 self.tool_loaded = False
                 self.status = AFCLaneState.NONE
                 self.loaded_to_hub = False
                 self.td1_data = {}
-                self.afc.spool.clear_values(self)
+                if not self.remember_spool:
+                    self.afc.spool.clear_values(self)
                 self.unit_obj.lane_unloaded(self)
 
         self.afc.save_vars()
