@@ -72,9 +72,10 @@ class AFCLane:
         #stored status variables
         self.fullname           = config.get_name()
         self.name               = self.fullname.split()[-1]
+        self.remember_spool     = False
+
         # TODO: Put these variables into a common class or something so they are easier to clear out
         # when lanes are unloaded
-        self.remember_spool     = True
         self.tool_loaded        = False
         self.loaded_to_hub      = False
         self.spool_id           = None
