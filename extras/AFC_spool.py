@@ -46,7 +46,7 @@ class AFCSpool:
         self.gcode.register_mux_command('SET_SPOOL_ID',         "LANE", lane_obj.name, self.cmd_SET_SPOOL_ID,           desc=self.cmd_SET_SPOOL_ID_help)
         self.gcode.register_mux_command('SET_RUNOUT',           "LANE", lane_obj.name, self.cmd_SET_RUNOUT,             desc=self.cmd_SET_RUNOUT_help)
         self.gcode.register_mux_command('SET_MAP',              "LANE", lane_obj.name, self.cmd_SET_MAP,                desc=self.cmd_SET_MAP_help)
-        self.gcode.register_mux_command('SET_REMEMBER_SPOOL',   "LANE",any,                       self.cmd_SET_REMEMBER_SPOOL,     desc=self.cmd_SET_REMEMBER_SPOOL_help)
+        self.gcode.register_mux_command('SET_REMEMBER_SPOOL',   "LANE", lane_obj.name, self.cmd_SET_REMEMBER_SPOOL,     desc=self.cmd_SET_REMEMBER_SPOOL_help)
 
     cmd_SET_MAP_help = "Changes T(n) mapping for a lane"
     def cmd_SET_MAP(self, gcmd):
