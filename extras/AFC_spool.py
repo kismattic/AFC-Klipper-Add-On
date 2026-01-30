@@ -281,7 +281,6 @@ class AFCSpool:
         SET_REMEMBER_SPOOL LANE=lane1 REMEMBER_ME=1
         ```
         """
-        bool(gcmd.get_int("PARK", self.park, minval=0, maxval=1))
         lane = gcmd.get('LANE', None)
         if lane is None:
             self.logger.info("No LANE Defined")
