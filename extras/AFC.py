@@ -1064,7 +1064,7 @@ class afc:
 
             # Removing spool from vars since it was ejected
             self.spool.set_spoolID(cur_lane, None)
-            self.logger.info("LANE {} eject done".format(cur_lane.name))
+            self.logger.info("LANE {} asdf eject done".format(cur_lane.name))
             self.function.afc_led(cur_lane.led_not_ready, cur_lane.led_index)
 
         elif cur_lane.name == self.current:
