@@ -282,11 +282,12 @@ class AFCSpool:
         ```
         """
         lane = gcmd.get('LANE', None)
+        self.logger.info("lane: {}".format(lane))
         if lane is None:
             self.logger.info("No LANE Defined")
             return
 
-        remember_spool = bool(gcmd.get_int("REMEMBER_SPOOL", 0, minval=0, maxval=1))
+        remember_spool = bool(gcmd.get_int('REMEMBER_SPOOL', 0, minval=0, maxval=1))
 
         if lane.lower() == 'all':
             for lane in self.afc.lanes.values():
