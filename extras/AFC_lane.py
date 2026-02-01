@@ -1423,6 +1423,7 @@ class AFCLane:
             response["diameter"]=self.filament_diameter
             response["empty_spool_weight"]=self.empty_spool_weight
 
+        response["remember_spool"]= bool(self.remember_spool)
         response["spool_id"]= int(self.spool_id) if self.spool_id else None
         response["color"]=self.color
         response["weight"]=self.weight

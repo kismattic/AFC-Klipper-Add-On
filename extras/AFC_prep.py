@@ -148,6 +148,8 @@ class afcPrep:
             # If units section exists in vars file add currently stored data to AFC.units array
             if cur_lane.unit in units:
                 if cur_lane.name in units[cur_lane.unit]:
+                    if 'remember_spool' in units[cur_lane.unit][cur_lane.name]:
+                        cur_lane.remember_spool = units[cur_lane.unit][cur_lane.name]['remember_spool']
                     if 'spool_id' in units[cur_lane.unit][cur_lane.name]: cur_lane.spool_id = units[cur_lane.unit][cur_lane.name]['spool_id']
                     if self.afc.spoolman is not None and cur_lane.spool_id:
                         self.afc.spool.set_spoolID(cur_lane, cur_lane.spool_id, save_vars=False)
