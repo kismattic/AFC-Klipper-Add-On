@@ -282,7 +282,6 @@ class AFCSpool:
         ```
         """
         lane = gcmd.get('LANE', None)
-        self.logger.info("lane: {}".format(lane))
         if lane is None:
             self.logger.info("No LANE Defined")
             return
