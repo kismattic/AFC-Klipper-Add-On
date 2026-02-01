@@ -273,12 +273,12 @@ class AFCSpool:
 
         Usage
         -----
-        `SET_REMEMBER_SPOOL LANE=<lane|all> REMEMBER_ME=<0|1>`
+        `SET_REMEMBER_SPOOL LANE=<lane> REMEMBER_SPOOL=<0|1>`
 
         Example
         -----
         ```
-        SET_REMEMBER_SPOOL LANE=lane1 REMEMBER_ME=1
+        SET_REMEMBER_SPOOL LANE=lane1 REMEMBER_SPOOL=1
         ```
         """
         lane = gcmd.get('LANE', None)
