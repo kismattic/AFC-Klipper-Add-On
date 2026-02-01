@@ -72,7 +72,6 @@ class AFCLane:
         #stored status variables
         self.fullname           = config.get_name()
         self.name               = self.fullname.split()[-1]
-        self.remember_spool     = False
 
         # TODO: Put these variables into a common class or something so they are easier to clear out
         # when lanes are unloaded
@@ -104,6 +103,7 @@ class AFCLane:
             pass
 
         self.extruder_name      = config.get('extruder', None)                          # Extruder name(AFC_extruder) that belongs to this stepper, overrides extruder that is set in unit(AFC_BoxTurtle/NightOwl/etc) section.
+        self.remember_spool     = config.get('remember_spool', False)                   # TODO: add description here
         self.map                = config.get('cmd', None)                               # Keeping this in so it does not break others config that may have used this, use map instead
         # Saving to self._map so that if a user has it defined it will be reset back to this when
         # the calling RESET_AFC_MAPPING macro.
@@ -397,6 +397,7 @@ class AFCLane:
         self.afc.gcode.register_mux_command('SAVE_SPEED_MULTIPLIER', "LANE", self.name, self.cmd_SAVE_SPEED_MULTIPLIER, desc=self.cmd_SAVE_SPEED_MULTIPLIER_help)
         self.afc.gcode.register_mux_command('SET_HUB_DIST',          "LANE", self.name, self.cmd_SET_HUB_DIST, desc=self.cmd_SET_HUB_DIST_help)
         self.afc.gcode.register_mux_command('SAVE_HUB_DIST',         "LANE", self.name, self.cmd_SAVE_HUB_DIST, desc=self.cmd_SAVE_HUB_DIST_help)
+        self.afc.gcode.register_mux_command('AFC_SET_REMEMBER_SPOOL', "REMEMBER_SPOOL", self.remember_spool, self.cmd_AFC_SET_REMEMBER_SPOOL, desc=self.cmd_AFC_SET_REMEMBER_SPOOL_help)
 
         if self.assisted_unload is None: self.assisted_unload = self.unit_obj.assisted_unload
 
@@ -1401,6 +1402,29 @@ class AFCLane:
         ```
         """
         self.afc.function.ConfigRewrite(self.fullname, 'dist_hub', self.dist_hub, '')
+
+    cmd_AFC_SET_REMEMBER_SPOOL_help = "Set lane to remember ejected spool"
+    def cmd_AFC_SET_REMEMBER_SPOOL(self, gcmd):
+        """
+        This function handles enabling/disabling the functionality to remember latest spool info after ejecting spool for a specified lane. It retrieves the lane
+        specified by the 'LANE' parameter and sets its remember_spool to the value provided by the 'REMEMBER_SPOOL' parameter.
+
+        Usage
+        -----
+        `AFC_SET_REMEMBER_SPOOL LANE=<lane|all> REMEMBER_SPOOL=<0|1>`
+
+        Example
+        -----
+        ```
+        AFC_SET_REMEMBER_SPOOL LANE=lane1 REMEMBER_SPOOL=1
+        ```
+        """
+        old_remember_spool = self.remember_spool
+
+        length = gcmd.get("LENGTH", self.dist_hub)
+
+
+        self.afc.function.ConfigRewrite(self.fullname, 'remember_spool', self.remember_spool, '')
 
     def get_status(self, eventtime=None, save_to_file=False):
         response = {}
