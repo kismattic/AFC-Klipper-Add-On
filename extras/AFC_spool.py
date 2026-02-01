@@ -289,7 +289,7 @@ class AFCSpool:
 
         remember_spool = bool(gcmd.get_int('REMEMBER_SPOOL', 0, minval=0, maxval=1))
 
-        if lane.lower() not in self.afc.lanes:
+        if lane not in self.afc.lanes:
             self.logger.info('{} Unknown'.format(lane))
             return
         else:
