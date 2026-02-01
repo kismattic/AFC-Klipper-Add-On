@@ -392,7 +392,7 @@ class AFCSpool:
             elif not cur_lane.remember_spool:
                 self.clear_values(cur_lane)
         elif not cur_lane.remember_spool:
-            # Clears out values if users are not using spoolman, this is to cover this function being called from LANE UNLOAD and clearing out
+            # Clears out values if users are not using spoolman and lane isn't set to remember spool, this is to cover this function being called from LANE UNLOAD and clearing out
             # Manually entered information
             self.clear_values(cur_lane)
         if save_vars: self.afc.save_vars()
