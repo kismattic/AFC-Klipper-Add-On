@@ -40,12 +40,13 @@ class AFCSpool:
 
         :param lane_obj: object for lane to register
         """
-        self.gcode.register_mux_command('SET_COLOR',    "LANE", lane_obj.name, self.cmd_SET_COLOR,      desc=self.cmd_SET_COLOR_help)
-        self.gcode.register_mux_command('SET_WEIGHT',   "LANE", lane_obj.name, self.cmd_SET_WEIGHT,     desc=self.cmd_SET_WEIGHT_help)
-        self.gcode.register_mux_command('SET_MATERIAL', "LANE", lane_obj.name, self.cmd_SET_MATERIAL,   desc=self.cmd_SET_MATERIAL_help)
-        self.gcode.register_mux_command('SET_SPOOL_ID', "LANE", lane_obj.name, self.cmd_SET_SPOOL_ID,   desc=self.cmd_SET_SPOOL_ID_help)
-        self.gcode.register_mux_command('SET_RUNOUT',   "LANE", lane_obj.name, self.cmd_SET_RUNOUT,     desc=self.cmd_SET_RUNOUT_help)
-        self.gcode.register_mux_command('SET_MAP',      "LANE", lane_obj.name, self.cmd_SET_MAP,        desc=self.cmd_SET_MAP_help)
+        self.gcode.register_mux_command('SET_COLOR',            "LANE", lane_obj.name, self.cmd_SET_COLOR,              desc=self.cmd_SET_COLOR_help)
+        self.gcode.register_mux_command('SET_WEIGHT',           "LANE", lane_obj.name, self.cmd_SET_WEIGHT,             desc=self.cmd_SET_WEIGHT_help)
+        self.gcode.register_mux_command('SET_MATERIAL',         "LANE", lane_obj.name, self.cmd_SET_MATERIAL,           desc=self.cmd_SET_MATERIAL_help)
+        self.gcode.register_mux_command('SET_SPOOL_ID',         "LANE", lane_obj.name, self.cmd_SET_SPOOL_ID,           desc=self.cmd_SET_SPOOL_ID_help)
+        self.gcode.register_mux_command('SET_RUNOUT',           "LANE", lane_obj.name, self.cmd_SET_RUNOUT,             desc=self.cmd_SET_RUNOUT_help)
+        self.gcode.register_mux_command('SET_MAP',              "LANE", lane_obj.name, self.cmd_SET_MAP,                desc=self.cmd_SET_MAP_help)
+        self.gcode.register_mux_command('SET_REMEMBER_SPOOL',   "LANE", lane_obj.name, self.cmd_SET_REMEMBER_SPOOL,     desc=self.cmd_SET_REMEMBER_SPOOL_help)
 
     cmd_SET_MAP_help = "Changes T(n) mapping for a lane"
     def cmd_SET_MAP(self, gcmd):
@@ -264,6 +265,39 @@ class AFCSpool:
             if cur_lane.name == self.afc.current:
                 self.set_active_spool(cur_lane.spool_id)
 
+    cmd_SET_REMEMBER_SPOOL_help = "Set lane to remember ejected spool"
+    def cmd_SET_REMEMBER_SPOOL(self, gcmd):
+        """
+        This function handles enabling/disabling the functionality to remember latest spool info after ejecting spool for a specified lane. It retrieves the lane
+        specified by the 'LANE' parameter and sets its remember_spool to the value provided by the 'REMEMBER_SPOOL' parameter.
+
+        Usage
+        -----
+        `SET_REMEMBER_SPOOL LANE=<lane> REMEMBER_SPOOL=<0|1>`
+
+        Example
+        -----
+        ```
+        SET_REMEMBER_SPOOL LANE=lane1 REMEMBER_SPOOL=1
+        ```
+        """
+        lane = gcmd.get('LANE', None)
+        self.logger.info("lane: {}".format(lane))
+        if lane is None:
+            self.logger.info("No LANE Defined")
+            return
+
+        remember_spool = bool(gcmd.get_int('REMEMBER_SPOOL', 0, minval=0, maxval=1))
+
+        if lane.lower() not in self.afc.lanes:
+            self.logger.info('{} Unknown'.format(lane))
+            return
+        else:
+            cur_lane = self.afc.lanes[lane]
+            cur_lane.remember_spool = remember_spool
+
+        self.afc.save_vars()
+
     def _get_filament_values( self, filament, field, default=None):
         '''
         Helper function for checking if field is set and returns value if it exists,
@@ -283,8 +317,13 @@ class AFCSpool:
         Helper function for setting lane spool values
         """
         # set defaults if there's no spool id, or the spoolman lookup fails
-        cur_lane.material = self.afc.default_material_type
-        cur_lane.weight = 1000 # Defaulting weight to 1000 upon load
+        if not cur_lane.remember_spool:
+            cur_lane.material = self.afc.default_material_type
+            cur_lane.weight = 1000 # Defaulting weight to 1000 upon load
+        else:
+            cur_lane.material = cur_lane.material
+            cur_lane.weight = cur_lane.weight
+            cur_lane.color = cur_lane.color
 
         if self.afc.spoolman is not None and self.next_spool_id is not None:
             spool_id = self.next_spool_id
@@ -343,10 +382,10 @@ class AFCSpool:
 
                 except Exception as e:
                     self.afc.error.AFC_error("Error when trying to get Spoolman data for ID:{}, Error: {}".format(SpoolID, e), False)
-            else:
+            elif not cur_lane.remember_spool:
                 self.clear_values(cur_lane)
-        else:
-            # Clears out values if users are not using spoolman, this is to cover this function being called from LANE UNLOAD and clearing out
+        elif not cur_lane.remember_spool:
+            # Clears out values if users are not using spoolman and lane isn't set to remember spool, this is to cover this function being called from LANE UNLOAD and clearing out
             # Manually entered information
             self.clear_values(cur_lane)
         if save_vars: self.afc.save_vars()

@@ -72,6 +72,8 @@ class AFCLane:
         #stored status variables
         self.fullname           = config.get_name()
         self.name               = self.fullname.split()[-1]
+        self.remember_spool     = False
+
         # TODO: Put these variables into a common class or something so they are easier to clear out
         # when lanes are unloaded
         self.tool_loaded        = False
@@ -763,7 +765,8 @@ class AFCLane:
                 self.status = AFCLaneState.NONE
                 self.loaded_to_hub = False
                 self.td1_data = {}
-                self.afc.spool.clear_values(self)
+                if not self.remember_spool:
+                    self.afc.spool.clear_values(self)
                 self.unit_obj.lane_unloaded(self)
 
         self.afc.save_vars()
