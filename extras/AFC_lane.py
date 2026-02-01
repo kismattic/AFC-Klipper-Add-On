@@ -1411,7 +1411,7 @@ class AFCLane:
 
         Usage
         -----
-        `AFC_SET_REMEMBER_SPOOL LANE=<lane|all> REMEMBER_SPOOL=<0|1>`
+        `AFC_SET_REMEMBER_SPOOL LANE=<lane> REMEMBER_SPOOL=<0|1>`
 
         Example
         -----
@@ -1419,12 +1419,24 @@ class AFCLane:
         AFC_SET_REMEMBER_SPOOL LANE=lane1 REMEMBER_SPOOL=1
         ```
         """
-        old_remember_spool = self.remember_spool
+        old_remember_spool = bool(self.remember_spool)
+        default_int = 1 if old_remember_spool else 0
+        new_remember_spool = bool(gcmd.get_int("REMEMBER_SPOOL", default_int, minval=0, maxval=1))
 
-        length = gcmd.get("LENGTH", self.dist_hub)
+        if new_remember_spool == old_remember_spool:
+            self.logger.info(f"{self.name} remember_spool already set to {new_remember_spool}")
+            return
+        self.remember_spool = new_remember_spool
 
-
-        self.afc.function.ConfigRewrite(self.fullname, 'remember_spool', self.remember_spool, '')
+        try:
+            # Persist as 0/1 for config friendliness across parsers
+            self.afc.function.ConfigRewrite(self.fullname, "remember_spool", self.remember_spool, "")
+            self.logger.info(
+                f"{self.name} remember_spool changed: {old_remember_spool} -> {self.remember_spool}"
+            )
+        except Exception as e:
+            # Keep runtime state, but make the failure visible
+            self.logger.error(f"{self.name} failed to save remember_spool to config: {e}")
 
     def get_status(self, eventtime=None, save_to_file=False):
         response = {}
