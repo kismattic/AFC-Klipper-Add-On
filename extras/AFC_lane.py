@@ -207,6 +207,8 @@ class AFCLane:
         self.function.register_mux_command(self.show_macros, 'SET_LANE_LOADED', 'LANE', self.name,
                                            self.cmd_SET_LANE_LOADED, self.cmd_SET_LANE_LOADED_help,
                                            self.cmd_SET_LANE_LOAD_options )
+        self.afc.gcode.register_mux_command('AFC_SET_REMEMBER_SPOOL', "REMEMBER_SPOOL", self.remember_spool, self.cmd_AFC_SET_REMEMBER_SPOOL, desc=self.cmd_AFC_SET_REMEMBER_SPOOL_help)
+
 
     def __str__(self):
         return self.name
@@ -397,7 +399,6 @@ class AFCLane:
         self.afc.gcode.register_mux_command('SAVE_SPEED_MULTIPLIER', "LANE", self.name, self.cmd_SAVE_SPEED_MULTIPLIER, desc=self.cmd_SAVE_SPEED_MULTIPLIER_help)
         self.afc.gcode.register_mux_command('SET_HUB_DIST',          "LANE", self.name, self.cmd_SET_HUB_DIST, desc=self.cmd_SET_HUB_DIST_help)
         self.afc.gcode.register_mux_command('SAVE_HUB_DIST',         "LANE", self.name, self.cmd_SAVE_HUB_DIST, desc=self.cmd_SAVE_HUB_DIST_help)
-        self.afc.gcode.register_mux_command('AFC_SET_REMEMBER_SPOOL', "REMEMBER_SPOOL", None, self.cmd_AFC_SET_REMEMBER_SPOOL, desc=self.cmd_AFC_SET_REMEMBER_SPOOL_help)
 
         if self.assisted_unload is None: self.assisted_unload = self.unit_obj.assisted_unload
 
