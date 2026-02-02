@@ -46,7 +46,6 @@ class AFCSpool:
         self.gcode.register_mux_command('SET_SPOOL_ID',         "LANE", lane_obj.name, self.cmd_SET_SPOOL_ID,           desc=self.cmd_SET_SPOOL_ID_help)
         self.gcode.register_mux_command('SET_RUNOUT',           "LANE", lane_obj.name, self.cmd_SET_RUNOUT,             desc=self.cmd_SET_RUNOUT_help)
         self.gcode.register_mux_command('SET_MAP',              "LANE", lane_obj.name, self.cmd_SET_MAP,                desc=self.cmd_SET_MAP_help)
-        self.gcode.register_mux_command('SET_REMEMBER_SPOOL',   "LANE", lane_obj.name, self.cmd_SET_REMEMBER_SPOOL,     desc=self.cmd_SET_REMEMBER_SPOOL_help)
 
     cmd_SET_MAP_help = "Changes T(n) mapping for a lane"
     def cmd_SET_MAP(self, gcmd):
@@ -264,38 +263,6 @@ class AFCSpool:
             # If the lane is currently loaded to the toolhead, update the active spool in Spoolman
             if cur_lane.name == self.afc.current:
                 self.set_active_spool(cur_lane.spool_id)
-
-    cmd_SET_REMEMBER_SPOOL_help = "Set lane to remember ejected spool"
-    def cmd_SET_REMEMBER_SPOOL(self, gcmd):
-        """
-        This function handles enabling/disabling the functionality to remember latest spool info after ejecting spool for a specified lane. It retrieves the lane
-        specified by the 'LANE' parameter and sets its remember_spool to the value provided by the 'REMEMBER_SPOOL' parameter.
-
-        Usage
-        -----
-        `SET_REMEMBER_SPOOL LANE=<lane> REMEMBER_SPOOL=<0|1>`
-
-        Example
-        -----
-        ```
-        SET_REMEMBER_SPOOL LANE=lane1 REMEMBER_SPOOL=1
-        ```
-        """
-        lane = gcmd.get('LANE', None)
-        if lane is None:
-            self.logger.info("No LANE Defined")
-            return
-
-        remember_spool = bool(gcmd.get_int('REMEMBER_SPOOL', 0, minval=0, maxval=1))
-
-        if lane not in self.afc.lanes:
-            self.logger.info('{} Unknown'.format(lane))
-            return
-        else:
-            cur_lane = self.afc.lanes[lane]
-            cur_lane.remember_spool = remember_spool
-
-        self.afc.save_vars()
 
     def _get_filament_values( self, filament, field, default=None):
         '''
