@@ -1435,7 +1435,7 @@ class AFCLane:
         # prevents issue where values are retained on next load when remember_me is set to false while lane is unloaded
         if not self.remember_spool and self.status == AFCLaneState.NONE:
             self.afc.spool.set_spoolID(self, None)
-
+            self.logger.info("testing")
         try:
             self.afc.function.ConfigRewrite(self.fullname, "remember_spool", self.remember_spool, "")
             self.logger.info(
