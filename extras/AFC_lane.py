@@ -1432,14 +1432,16 @@ class AFCLane:
             return
         self.remember_spool = new_remember_spool
 
+        # prevents issue where values are retained on next load when remember_me is set to false while lane is unloaded
+        if not self.remember_spool and self.status == AFCLaneState.NONE:
+            self.afc.spool.set_spoolID(self, None)
+
         try:
-            # Persist as 0/1 for config friendliness across parsers
             self.afc.function.ConfigRewrite(self.fullname, "remember_spool", self.remember_spool, "")
             self.logger.info(
                 f"{self.name} remember_spool changed: {old_remember_spool} -> {self.remember_spool}"
             )
         except Exception as e:
-            # Keep runtime state, but make the failure visible
             self.logger.error(f"{self.name} failed to save remember_spool to config: {e}")
 
     def get_status(self, eventtime=None, save_to_file=False):
