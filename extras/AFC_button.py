@@ -19,8 +19,8 @@ class AFCButton:
     Single-button UI (mode="single"):
       - Short press: cycle lanes (LANE_SELECT) / toggle action (ACTION_SELECT)
       - Long press: select lane / confirm action
-      - Double short press (ACTION_SELECT): cancel back to lane select
-      - Very long press (any time): cancel back to lane select
+      - Double short press (ACTION_SELECT): cancel (EXIT UI)
+      - Very long press (any time): cancel (EXIT UI)
     """
 
     MODE_LANE = "lane"
@@ -64,6 +64,7 @@ class AFCButton:
         self._last_short_release = None
 
         # After cancel/exit transitions, ignore button events briefly (prevents re-trigger from release/bounce)
+        # NOTE: this is in reactor.monotonic() timebase
         self._ignore_input_until = 0.0
 
         # Lane-mode binding (existing behavior)
@@ -264,27 +265,6 @@ class AFCButton:
 
         self._focus_active = True
 
-    def _cancel_to_lane_select(self, reason: str):
-        """
-        Return to lane select menu from anywhere in single-button mode.
-        Restores LEDs appropriately and re-highlights the currently indexed lane.
-        """
-        self.afc.logger.info(f"[AFC Button] Cancel -> lane select ({reason})")
-
-        # IMPORTANT: swallow the trailing release/bounce that often follows a cancel gesture
-        self._arm_input_cooldown(0.30)
-        self._press_time = None
-        self._last_short_release = None
-
-        # Clear action state; keep index so user returns where they were
-        self._selected_lane_name = None
-        self._selected_action = None
-
-        # If focus was active in ACTION_SELECT, clear current override before re-applying lane highlight
-        self._ui_led_clear()
-
-        self._enter_lane_select()
-
     def _refresh_lane_names(self):
         # Only include lanes that are in the READY state (prep + load)
         names = sorted(list(self.afc.lanes.keys()))
@@ -301,18 +281,19 @@ class AFCButton:
     def _get_lane_obj_by_name(self, lane_name: str):
         return self.afc.lanes.get(lane_name)
 
-    def _arm_input_cooldown(self, seconds: float = 0.25):
+    def _arm_input_cooldown(self, seconds: float = 0.25, now_mono: float | None = None):
         """
-        Ignore button events briefly to prevent 'cancel -> immediately re-enter UI'
-        caused by the same physical release / bounce.
+        Ignore button events briefly to prevent immediate re-trigger from the same physical
+        release / bounce. Uses reactor.monotonic() timebase.
         """
-        try:
-            now = float(self.reactor.monotonic())
-        except Exception:
-            now = 0.0
-        self._ignore_input_until = max(self._ignore_input_until, now + float(seconds))
+        if now_mono is None:
+            try:
+                now_mono = float(self.reactor.monotonic())
+            except Exception:
+                now_mono = 0.0
+        self._ignore_input_until = max(self._ignore_input_until, float(now_mono) + float(seconds))
 
-    def _exit_ui(self, reason: str):
+    def _exit_ui(self, reason: str, now_mono: float | None = None):
         self.afc.logger.info(f"[AFC Button] Exit ({reason})")
         self._ui_state = self.UI_IDLE
         self._selected_lane_name = None
@@ -324,7 +305,7 @@ class AFCButton:
             self._focus_active = False
 
         # Prevent the next trailing release/press from immediately reopening the UI
-        self._arm_input_cooldown(0.30)
+        self._arm_input_cooldown(0.35, now_mono=now_mono)
         self._press_time = None
         self._last_short_release = None
 
@@ -359,7 +340,7 @@ class AFCButton:
         lane_obj = self._get_lane_obj_by_name(self._selected_lane_name)
         if lane_obj is None:
             self.afc.error.AFC_error(f"Selected lane '{self._selected_lane_name}' not found.", pause=False)
-            self._cancel_to_lane_select("lane_missing")
+            self._exit_ui("lane_missing")
             return
         self._selected_action = self._default_action_for_lane(lane_obj)
         self._ui_state = self.UI_ACTION_SELECT
@@ -394,26 +375,35 @@ class AFCButton:
         lane_name = self._selected_lane_name
         action = self._selected_action
         if not lane_name or not action:
-            self._cancel_to_lane_select("invalid_state")
+            self._exit_ui("invalid_state")
             return
 
         lane_obj = self._get_lane_obj_by_name(lane_name)
         if lane_obj is None:
             self.afc.error.AFC_error(f"Lane '{lane_name}' not found.", pause=False)
-            self._cancel_to_lane_select("lane_missing")
+            self._exit_ui("lane_missing")
             return
 
         self._execute_action(lane_obj, action)
-        # Return to lane select after running the command
-        self._cancel_to_lane_select("done")
+        # Keep existing behavior: after running the command, return to lane select
+        self._selected_lane_name = None
+        self._selected_action = None
+        self._ui_led_clear()
+        self._enter_lane_select()
 
     # ----------------------------
     # Button callback
     # ----------------------------
 
     def _button_callback(self, eventtime, state):
+        # Use monotonic consistently for cooldown checks (eventtime may be a different timebase)
+        try:
+            now_mono = float(self.reactor.monotonic())
+        except Exception:
+            now_mono = 0.0
+
         # Ignore BOTH press and release events during cooldown
-        if float(eventtime) < self._ignore_input_until:
+        if now_mono < self._ignore_input_until:
             if state:
                 self._press_time = None
             return
@@ -422,15 +412,6 @@ class AFCButton:
             self._press_time = eventtime
             return
         if self._press_time is None:
-            return
-
-        # Drop trailing/bounce events right after UI exit/cancel
-        try:
-            now = float(eventtime)
-        except Exception:
-            now = 0.0
-        if now < self._ignore_input_until:
-            self._press_time = None
             return
 
         if self.afc.function.is_printing(check_movement=True):
@@ -445,9 +426,9 @@ class AFCButton:
         if held_time < 0.05:
             return
 
-        # Global cancel (very long press) for single-button mode
+        # Global cancel (very long press) for single-button mode -> EXIT UI
         if self.mode == self.MODE_SINGLE and held_time >= self.cancel_press_duration:
-            self._cancel_to_lane_select("long_cancel")
+            self._exit_ui("long_cancel", now_mono=now_mono)
             self._last_short_release = None
             return
 
@@ -486,7 +467,9 @@ class AFCButton:
 
             if self._ui_state == self.UI_ACTION_SELECT:
                 if is_double:
-                    self._cancel_to_lane_select("double_press")
+                    # Cancel should fully exit (per request)
+                    self._exit_ui("double_cancel", now_mono=now_mono)
+                    self._last_short_release = None
                     return
                 if is_long:
                     self._single_confirm_action()
@@ -494,8 +477,9 @@ class AFCButton:
                     self._single_toggle_action()
                 return
 
-            # Unknown state recovery
-            self._cancel_to_lane_select("unknown_state")
+            # Unknown state recovery -> exit
+            self._exit_ui("unknown_state", now_mono=now_mono)
+            self._last_short_release = None
             return
 
         # ----------------------------
