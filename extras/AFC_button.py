@@ -17,10 +17,11 @@ class AFCButton:
       - mode = "single": one button cycles lanes, selects lane, then selects LOAD/EJECT, confirm, cancel
 
     Single-button UI (mode="single"):
+      - UI is normally idle (no LED override) until first interaction
       - Short press: cycle lanes (LANE_SELECT) / toggle action (ACTION_SELECT)
       - Long press: select lane / confirm action
-      - Double short press (ACTION_SELECT): cancel back to lane select
-      - Very long press (any time): cancel back to lane select
+      - Double short press: cancel/exit UI (restore LEDs)
+      - Very long press: cancel/exit UI (restore LEDs)
     """
 
     MODE_LANE = "lane"
