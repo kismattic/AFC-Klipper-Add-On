@@ -405,6 +405,15 @@ class AFCExtruderStepper(AFCLane):
         :param endstop_spec: Name of endstop to search for in local mapping
         :return tuple: Returns MCU_endstop and endstop name found in local dictionary
         """
+
+        # Normalize enums / objects into a stable lowercase string key
+        try:
+            if hasattr(endstop_spec, "value"):
+                endstop_spec = endstop_spec.value
+        except Exception:
+            pass
+        endstop_spec = str(endstop_spec).strip().lower()
+
         # Normalize aliases
         alias_map = {
             'tool': 'tool_start',
