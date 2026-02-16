@@ -26,6 +26,7 @@ class AFCButton:
     MODE_LANE = "lane"
     MODE_SINGLE = "single"
 
+    UI_IDLE = "idle"
     UI_LANE_SELECT = "lane_select"
     UI_ACTION_SELECT = "action_select"
 
@@ -51,7 +52,8 @@ class AFCButton:
         self.double_press_window = config.getfloat("double_press_window", 0.35)
 
         # LED colors for the UI (R,G,B,W in 0..1)
-        self.ui_led_yellow = config.get("ui_led_yellow", "1,1,0,0")
+        # In the lane SELECT menu we use purple for the highlighted lane, and turn off all other lane LEDs.
+        self.ui_led_purple = config.get("ui_led_purple", "1,0,1,0")
         self.ui_led_green = config.get("ui_led_green", "0,1,0,0")
         self.ui_led_red = config.get("ui_led_red", "1,0,0,0")
 
@@ -66,7 +68,7 @@ class AFCButton:
         self.lane_obj = None
 
         # Single-button state
-        self._ui_state = self.UI_LANE_SELECT
+        self._ui_state = self.UI_IDLE
         self._lane_names: list[str] = []
         self._lane_index = 0
         self._selected_lane_name: str | None = None
@@ -74,6 +76,9 @@ class AFCButton:
 
         # Track which lane LED we are currently overriding (so we can restore it)
         self._ui_led_lane_name: str | None = None
+
+        # Focus mode (turn off other lanes while selecting)
+        self._focus_active = False
 
         # Register the button callback
         buttons = self.printer.load_object(config, "buttons")
@@ -86,17 +91,14 @@ class AFCButton:
 
     def _handle_ready(self):
         if self.mode == self.MODE_SINGLE:
-            # Snapshot available lanes for cycling
-            # (sorted for predictability)
-            self._lane_names = sorted(list(self.afc.lanes.keys()))
-            if not self._lane_names:
-                raise error("AFC_button single mode: no lanes found in configuration.")
-            self._lane_index = max(0, min(self._lane_index, len(self._lane_names) - 1))
-            self._ui_state = self.UI_LANE_SELECT
+            # Don't lock in lane list at boot; build it when user enters selection mode.
+            self._ui_state = self.UI_IDLE
             self._selected_lane_name = None
             self._selected_action = None
             self._ui_led_lane_name = None
-            self._announce_lane_highlight()
+            self._lane_names = []
+            self._lane_index = 0
+            self._focus_active = False
             return
 
         # Lane mode (existing behavior)
@@ -184,9 +186,106 @@ class AFCButton:
             self._restore_lane_led_default(lane_obj)
         self._ui_led_lane_name = None
 
+    def _restore_all_lane_leds_default(self):
+        """
+        Restore all lane LEDs back to their normal AFC state.
+        Used when exiting "focus" selection mode.
+        """
+        for lane_obj in self.afc.lanes.values():
+            self._restore_lane_led_default(lane_obj)
+
+    def _apply_lane_select_focus(self, selected_lane_name: str | None):
+        """
+        While in lane select menu:
+          - turn off LEDs for all other lanes
+          - highlight selected lane purple
+        """
+        if selected_lane_name is None:
+            return
+
+        # Turn off all other lane LEDs
+        for name, lane_obj in self.afc.lanes.items():
+            if name == selected_lane_name:
+                continue
+            self._set_lane_led(lane_obj, getattr(self.afc, "led_off", "0,0,0,0"))
+
+        # Highlight selected lane purple
+        self._ui_led_apply(selected_lane_name, self.ui_led_purple)
+        self._focus_active = True
+
     # ----------------------------
     # Helpers (single-button mode)
     # ----------------------------
+
+    def _lane_is_ready(self, lane_obj) -> bool:
+        """
+        "Ready" means prep AND load are both true.
+        """
+        if lane_obj is None:
+            return False
+        return bool(getattr(lane_obj, "prep_state", False)) and bool(getattr(lane_obj, "load_state", False))
+
+    def _default_action_for_lane(self, lane_obj) -> str:
+        """
+        Pick a sensible default action when a lane is selected.
+        - If the selected lane is currently loaded in the toolhead -> default to EJECT
+        - Otherwise -> default to LOAD
+        """
+        cur_lane = self.afc.function.get_current_lane_obj()
+        if cur_lane is not None and getattr(cur_lane, "name", None) == getattr(lane_obj, "name", None):
+            return self.ACTION_EJECT
+        return self.ACTION_LOAD
+
+    def _announce_action(self):
+        """
+        Announce current action choice and update LEDs.
+        Uses:
+          - green for LOAD
+          - red for EJECT
+        """
+        lane_name = self._selected_lane_name or self._get_highlight_lane_name()
+        action = self._selected_action or self.ACTION_LOAD
+
+        self.afc.logger.info(f"[AFC Button] Action for {lane_name}: {action.upper()}")
+
+        # Keep focus behavior: other lanes OFF, selected lane shows action color
+        for name, lane_obj in self.afc.lanes.items():
+            if name == lane_name:
+                continue
+            self._set_lane_led(lane_obj, getattr(self.afc, "led_off", "0,0,0,0"))
+
+        if action == self.ACTION_LOAD:
+            self._ui_led_apply(lane_name, self.ui_led_green)
+        else:
+            self._ui_led_apply(lane_name, self.ui_led_red)
+
+        self._focus_active = True
+
+    def _cancel_to_lane_select(self, reason: str):
+        """
+        Return to lane select menu from anywhere in single-button mode.
+        Restores LEDs appropriately and re-highlights the currently indexed lane.
+        """
+        self.afc.logger.info(f"[AFC Button] Cancel -> lane select ({reason})")
+
+        # Clear action state; keep index so user returns where they were
+        self._selected_lane_name = None
+        self._selected_action = None
+
+        # If focus was active in ACTION_SELECT, clear current override before re-applying lane highlight
+        self._ui_led_clear()
+
+        self._enter_lane_select()
+
+    def _refresh_lane_names(self):
+        # Only include lanes that are in the READY state (prep + load)
+        names = sorted(list(self.afc.lanes.keys()))
+        self._lane_names = [n for n in names if self._lane_is_ready(self._get_lane_obj_by_name(n))]
+
+        if self._lane_names:
+            self._lane_index = max(0, min(self._lane_index, len(self._lane_names) - 1))
+        else:
+            self._lane_index = 0
 
     def _get_highlight_lane_name(self) -> str:
         return self._lane_names[self._lane_index]
@@ -194,57 +293,40 @@ class AFCButton:
     def _get_lane_obj_by_name(self, lane_name: str):
         return self.afc.lanes.get(lane_name)
 
-    def _is_lane_loaded(self, lane_obj) -> bool:
-        # "Loaded" in the sense that a spool is in the lane path (not necessarily tooled)
-        # Prefer sensor state when available.
-        try:
-            if hasattr(lane_obj, "load_state"):
-                return bool(lane_obj.load_state)
-        except Exception:
-            pass
-        # Fallback to status flags if present
-        try:
-            return str(getattr(lane_obj, "status", "")).lower() in (
-                "loaded",
-                "tooled",
-                "tool loaded",
-                "tool loading",
-                "hub loading",
-            )
-        except Exception:
-            return False
+    def _exit_ui(self, reason: str):
+        self.afc.logger.info(f"[AFC Button] Exit ({reason})")
+        self._ui_state = self.UI_IDLE
+        self._selected_lane_name = None
+        self._selected_action = None
+        self._ui_led_clear()
 
-    def _default_action_for_lane(self, lane_obj) -> str:
-        # If lane is loaded -> user likely wants to eject, else load it
-        return self.ACTION_EJECT if self._is_lane_loaded(lane_obj) else self.ACTION_LOAD
+        if self._focus_active:
+            self._restore_all_lane_leds_default()
+            self._focus_active = False
 
-    def _announce_lane_highlight(self):
-        lane = self._get_highlight_lane_name()
-        lane_obj = self._get_lane_obj_by_name(lane)
-        loaded = self._is_lane_loaded(lane_obj) if lane_obj is not None else False
-        self.afc.logger.info(f"[AFC Button] Select lane: {lane} (loaded={loaded})")
-
-        # UI LED: highlighted lane in yellow
-        self._ui_led_apply(lane, self.ui_led_yellow)
-
-    def _announce_action(self):
-        lane = self._selected_lane_name
-        action = self._selected_action
-        self.afc.logger.info(f"[AFC Button] Lane={lane} action={action.upper() if action else None}")
-
-        # UI LED: selected lane green for LOAD, red for EJECT
-        if lane and action:
-            color = self.ui_led_green if action == self.ACTION_LOAD else self.ui_led_red
-            self._ui_led_apply(lane, color)
-
-    def _cancel_to_lane_select(self, reason: str = "cancel"):
+    def _enter_lane_select(self):
+        self._refresh_lane_names()
+        if not self._lane_names:
+            self.afc.error.AFC_error("No READY lanes (prep+load).", pause=False)
+            self._exit_ui("no_ready_lanes")
+            return
         self._ui_state = self.UI_LANE_SELECT
         self._selected_lane_name = None
         self._selected_action = None
-        self.afc.logger.info(f"[AFC Button] Cancel -> lane select ({reason})")
         self._announce_lane_highlight()
 
+    def _announce_lane_highlight(self):
+        lane = self._get_highlight_lane_name()
+        self.afc.logger.info(f"[AFC Button] Select READY lane: {lane}")
+
+        # Focus mode: other lanes off, selected lane purple
+        self._apply_lane_select_focus(lane)
+
     def _single_cycle_lane(self):
+        self._refresh_lane_names()
+        if not self._lane_names:
+            self._exit_ui("no_ready_lanes")
+            return
         self._lane_index = (self._lane_index + 1) % len(self._lane_names)
         self._announce_lane_highlight()
 
@@ -340,13 +422,21 @@ class AFCButton:
             # Detect double short press (used for cancel in ACTION_SELECT)
             is_double = False
             if is_short:
-                if self._last_short_release is not None and (eventtime - self._last_short_release) <= self.double_press_window:
+                if (
+                    self._last_short_release is not None
+                    and (eventtime - self._last_short_release) <= self.double_press_window
+                ):
                     is_double = True
                     self._last_short_release = None
                 else:
                     self._last_short_release = eventtime
             else:
                 self._last_short_release = None
+
+            # Enter UI from idle on any press
+            if self._ui_state == self.UI_IDLE:
+                self._enter_lane_select()
+                return
 
             if self._ui_state == self.UI_LANE_SELECT:
                 if is_long:
