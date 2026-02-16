@@ -124,12 +124,14 @@ class afcBoxTurtle(afcUnit):
         self.logger.raw('Calibrating Bowden Length with {}'.format(cur_lane.name))
         # move to hub and retrieve that distance, the checkpoint returned and if successful
         if not self.afc.homing_enabled:
+            self.logger.raw('test 1')
             hub_pos, checkpoint, success = self.move_until_state(cur_lane, lambda: cur_hub.state,
                                                                  cur_hub.move_dis, tol,
                                                                  cur_lane.short_move_dis,
                                                                  0, cur_lane.dist_hub + 200,
                                                                  "Moving to hub")
         else:
+            self.logger.raw('test 2')
             success, hub_pos = cur_lane.move_to(distance=cur_lane.dist_hub+200,
                                                 speed_mode=SpeedMode.CALIBRATION,
                                                 endstop=AFCHomingPoints.HUB,
