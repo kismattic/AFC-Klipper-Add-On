@@ -63,7 +63,7 @@ class AFCButton:
         self._press_time = None
         self._last_short_release = None
 
-        # After exiting UI (cancel/prompt end), ignore any trailing/bounce events briefly
+        # After cancel/exit transitions, ignore button events briefly (prevents re-trigger from release/bounce)
         self._ignore_input_until = 0.0
 
         # Lane-mode binding (existing behavior)
@@ -271,6 +271,11 @@ class AFCButton:
         """
         self.afc.logger.info(f"[AFC Button] Cancel -> lane select ({reason})")
 
+        # IMPORTANT: swallow the trailing release/bounce that often follows a cancel gesture
+        self._arm_input_cooldown(0.30)
+        self._press_time = None
+        self._last_short_release = None
+
         # Clear action state; keep index so user returns where they were
         self._selected_lane_name = None
         self._selected_action = None
@@ -320,6 +325,8 @@ class AFCButton:
 
         # Prevent the next trailing release/press from immediately reopening the UI
         self._arm_input_cooldown(0.30)
+        self._press_time = None
+        self._last_short_release = None
 
     def _enter_lane_select(self):
         self._refresh_lane_names()
@@ -405,6 +412,12 @@ class AFCButton:
     # ----------------------------
 
     def _button_callback(self, eventtime, state):
+        # Ignore BOTH press and release events during cooldown
+        if float(eventtime) < self._ignore_input_until:
+            if state:
+                self._press_time = None
+            return
+
         if state:
             self._press_time = eventtime
             return
