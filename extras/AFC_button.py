@@ -96,15 +96,14 @@ class AFCButton:
 
     def _handle_ready(self):
         if self.mode == self.MODE_SINGLE:
-            # Don't pre-filter / validate selectable lanes at startup.
-            # Some setups won't have "ready" lanes until PREP has run and sensors settle.
-            # We build the selectable list when the user first presses the button and enters selection mode.
+            self._refresh_lane_names()
+            if not self._lane_names:
+                raise error("AFC_button single mode: no selectable lanes found (check selectable_lanes).")
+            self._lane_index = max(0, min(self._lane_index, len(self._lane_names) - 1))
             self._ui_state = self.UI_IDLE
             self._selected_lane_name = None
             self._selected_action = None
             self._ui_led_lane_name = None
-            self._lane_names = []
-            self._lane_index = 0
             return
 
         # Lane mode (existing behavior)
