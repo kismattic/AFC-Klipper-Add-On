@@ -701,8 +701,8 @@ class AFCExtruderStepper(AFCLane):
                                                        triggered=triggered,
                                                        check_trigger=check_trigger,
                                                        assist_active=assist_active)
-        except Exception:
-            msg = f"Error occurred when trying to home to {endstop_spec}, PAUSING!"
+        except Exception as e:
+            msg = f"Error occurred when trying to home to {endstop_spec}: {e}"
             self.afc.error.AFC_error(msg, self.afc.function.in_print())
             self.logger.debug(f"{traceback.format_exc()}")
         self.sync_print_time()
