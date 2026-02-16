@@ -165,12 +165,20 @@ class AFCButton:
         except Exception:
             pass
 
-    def _ui_led_apply(self, lane_name: str | None, color: str | None):
+    def _ui_led_apply(self, lane_name: str | None, color: str | None, *, restore_previous: bool = True):
         """
-        Apply a UI LED override to a lane, restoring the previously overridden lane first.
+        Apply a UI LED override to a lane.
+
+        If restore_previous is True, restore the previously overridden lane back to its default AFC state.
+        If restore_previous is False, we leave the previous lane as-is (used for "focus" mode where we want
+        ALL non-selected lanes OFF).
         """
         # Restore previous override lane (if switching)
-        if self._ui_led_lane_name and self._ui_led_lane_name != lane_name:
+        if (
+            restore_previous
+            and self._ui_led_lane_name
+            and self._ui_led_lane_name != lane_name
+        ):
             prev_obj = self._get_lane_obj_by_name(self._ui_led_lane_name)
             self._restore_lane_led_default(prev_obj)
 
@@ -207,14 +215,16 @@ class AFCButton:
         if selected_lane_name is None:
             return
 
+        led_off = getattr(self.afc, "led_off", "0,0,0,0")
+
         # Turn off all other lane LEDs
         for name, lane_obj in self.afc.lanes.items():
             if name == selected_lane_name:
                 continue
-            self._set_lane_led(lane_obj, getattr(self.afc, "led_off", "0,0,0,0"))
+            self._set_lane_led(lane_obj, led_off)
 
-        # Highlight selected lane purple
-        self._ui_led_apply(selected_lane_name, self.ui_led_purple)
+        # Highlight selected lane purple WITHOUT restoring the previous lane to its default (green) state
+        self._ui_led_apply(selected_lane_name, self.ui_led_purple, restore_previous=False)
         self._focus_active = True
 
     # ----------------------------
@@ -252,16 +262,18 @@ class AFCButton:
 
         self.afc.logger.info(f"[AFC Button] Action for {lane_name}: {action.upper()}")
 
+        led_off = getattr(self.afc, "led_off", "0,0,0,0")
+
         # Keep focus behavior: other lanes OFF, selected lane shows action color
         for name, lane_obj in self.afc.lanes.items():
             if name == lane_name:
                 continue
-            self._set_lane_led(lane_obj, getattr(self.afc, "led_off", "0,0,0,0"))
+            self._set_lane_led(lane_obj, led_off)
 
         if action == self.ACTION_LOAD:
-            self._ui_led_apply(lane_name, self.ui_led_green)
+            self._ui_led_apply(lane_name, self.ui_led_green, restore_previous=False)
         else:
-            self._ui_led_apply(lane_name, self.ui_led_red)
+            self._ui_led_apply(lane_name, self.ui_led_red, restore_previous=False)
 
         self._focus_active = True
 
