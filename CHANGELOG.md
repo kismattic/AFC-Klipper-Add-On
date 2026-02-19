@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Updated the install-afc.sh script to properly allow renaming of additional units.
 
+## [2026-02-17]
+### Added
+- HTLF homing to home pin now uses homing logic when enabled
+
 ## [2026-02-15]
 ### Added
 - ViViD unit support, including new MCU configuration and pin mappings (RFID has yet to be implemented).
