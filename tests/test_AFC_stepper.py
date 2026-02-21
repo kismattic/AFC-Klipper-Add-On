@@ -217,3 +217,116 @@ class TestKinematicsShims:
         assert isinstance(steppers, list)
         assert len(steppers) == 1
         assert steppers[0] is s.extruder_stepper.stepper
+
+
+# ── sync_print_time ───────────────────────────────────────────────────────────
+
+def _make_stepper_with_toolhead(next_cmd_time=0.0, last_move_time=0.0):
+    """Build a stepper with a mocked toolhead for sync_print_time tests."""
+    s = _make_stepper()
+    s.next_cmd_time = next_cmd_time
+
+    toolhead = MagicMock()
+    toolhead.get_last_move_time.return_value = last_move_time
+    s.printer._objects["toolhead"] = toolhead
+    s.printer.lookup_object = lambda name, default=None: (
+        toolhead if name == "toolhead" else (s.afc if name == "AFC" else MagicMock())
+    )
+    s._toolhead = toolhead
+    return s
+
+
+class TestSyncPrintTime:
+    def test_no_dwell_when_next_cmd_time_is_behind(self):
+        """When next_cmd_time < print_time, update next_cmd_time to print_time."""
+        s = _make_stepper_with_toolhead(next_cmd_time=0.0, last_move_time=5.0)
+        s.sync_print_time()
+        assert s.next_cmd_time == 5.0
+
+    def test_dwell_called_when_next_cmd_time_is_ahead(self):
+        """When next_cmd_time > print_time, toolhead.dwell is called."""
+        s = _make_stepper_with_toolhead(next_cmd_time=10.0, last_move_time=5.0)
+        s.sync_print_time()
+        s._toolhead.dwell.assert_called_once_with(5.0)
+
+    def test_no_dwell_when_times_equal(self):
+        """When next_cmd_time == print_time, no dwell and no update needed."""
+        s = _make_stepper_with_toolhead(next_cmd_time=5.0, last_move_time=5.0)
+        s.sync_print_time()
+        s._toolhead.dwell.assert_not_called()
+        assert s.next_cmd_time == 5.0
+
+
+# ── flush_step_generation ─────────────────────────────────────────────────────
+
+class TestFlushStepGeneration:
+    def test_delegates_to_sync_print_time(self):
+        s = _make_stepper_with_toolhead(next_cmd_time=0.0, last_move_time=7.0)
+        s.flush_step_generation()
+        # After sync, next_cmd_time should be updated to print_time
+        assert s.next_cmd_time == 7.0
+
+
+# ── get_last_move_time ────────────────────────────────────────────────────────
+
+class TestGetLastMoveTime:
+    def test_returns_next_cmd_time_after_sync(self):
+        s = _make_stepper_with_toolhead(next_cmd_time=0.0, last_move_time=3.5)
+        result = s.get_last_move_time()
+        assert result == 3.5
+
+    def test_returns_next_cmd_time_when_ahead(self):
+        s = _make_stepper_with_toolhead(next_cmd_time=8.0, last_move_time=3.0)
+        result = s.get_last_move_time()
+        assert result == 8.0
+
+
+# ── sync_to_extruder / unsync_to_extruder ────────────────────────────────────
+
+class TestSyncUnsync:
+    def test_sync_calls_extruder_stepper_sync(self):
+        s = _make_stepper()
+        s.extruder_name = "extruder"
+        s._set_current = MagicMock()
+        s.set_print_current = MagicMock()
+        s.sync_to_extruder(update_current=False)
+        s.extruder_stepper.sync_to_extruder.assert_called_once_with("extruder")
+
+    def test_sync_calls_set_print_current_when_update_current(self):
+        s = _make_stepper()
+        s.extruder_name = "extruder"
+        s.set_print_current = MagicMock()
+        s.sync_to_extruder(update_current=True)
+        s.set_print_current.assert_called_once()
+
+    def test_sync_skips_set_print_current_when_update_current_false(self):
+        s = _make_stepper()
+        s.extruder_name = "extruder"
+        s.set_print_current = MagicMock()
+        s.sync_to_extruder(update_current=False)
+        s.set_print_current.assert_not_called()
+
+    def test_sync_uses_override_extruder_name(self):
+        s = _make_stepper()
+        s.extruder_name = "extruder"
+        s.set_print_current = MagicMock()
+        s.sync_to_extruder(update_current=False, extruder_name="extruder2")
+        s.extruder_stepper.sync_to_extruder.assert_called_once_with("extruder2")
+
+    def test_unsync_calls_sync_with_none(self):
+        s = _make_stepper()
+        s.set_load_current = MagicMock()
+        s.unsync_to_extruder(update_current=False)
+        s.extruder_stepper.sync_to_extruder.assert_called_once_with(None)
+
+    def test_unsync_calls_set_load_current_when_update_current(self):
+        s = _make_stepper()
+        s.set_load_current = MagicMock()
+        s.unsync_to_extruder(update_current=True)
+        s.set_load_current.assert_called_once()
+
+    def test_unsync_skips_set_load_current_when_update_current_false(self):
+        s = _make_stepper()
+        s.set_load_current = MagicMock()
+        s.unsync_to_extruder(update_current=False)
+        s.set_load_current.assert_not_called()

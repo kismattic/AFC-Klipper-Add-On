@@ -10,6 +10,7 @@ import configparser
 import logging
 import logging.handlers
 import os
+import pathlib
 import queue
 import sys
 import types
@@ -524,3 +525,53 @@ def mock_printer(mock_afc):
 @pytest.fixture
 def mock_config(mock_printer):
     return MockConfig(printer=mock_printer)
+
+
+# ── Klippy integration-test session hooks ─────────────────────────────────────
+# Sets up the Klipper environment by symlinking AFC extras and the testing
+# plugin into the cloned Klipper tree before any .test files are collected.
+
+_ROOT = pathlib.Path(__file__).parent.parent
+_KLIPPER_PATH = pathlib.Path(os.environ.get("KLIPPER_PATH", str(_ROOT / "klipper")))
+_AFC_EXTRAS = _ROOT / "extras"
+_TESTING_PLUGIN_SRC = _ROOT / "tests" / "klippy_testing_plugin.py"
+
+
+def pytest_sessionstart(session):
+    """Link AFC extras and the testing plugin into Klipper for integration tests."""
+    if not _KLIPPER_PATH.exists():
+        return  # Klipper not cloned yet — klippy tests will be skipped
+
+    klippy_dir = _KLIPPER_PATH / "klippy"
+    if not klippy_dir.exists():
+        return
+
+    klippy_extras = klippy_dir / "extras"
+    linked: list[pathlib.Path] = []
+
+    # Symlink each AFC_*.py module into Klipper's extras directory so that
+    # "from extras.AFC_xxx import ..." resolves correctly inside klippy.
+    if klippy_extras.exists():
+        for src in sorted(_AFC_EXTRAS.glob("AFC*.py")):
+            dst = klippy_extras / src.name
+            if not dst.exists():
+                os.symlink(src.resolve(), dst)
+                linked.append(dst)
+
+    # Symlink the testing plugin (provides the ASSERT gcode command) into
+    # Klipper's extras directory so it loads when [testing] appears in a config.
+    plugin_link = klippy_extras / "testing.py"
+    if not plugin_link.exists() and _TESTING_PLUGIN_SRC.exists():
+        os.symlink(_TESTING_PLUGIN_SRC.resolve(), plugin_link)
+        linked.append(plugin_link)
+
+    session._afc_klippy_links = linked
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Remove symlinks created during the test session."""
+    for link in getattr(session, "_afc_klippy_links", []):
+        try:
+            link.unlink()
+        except FileNotFoundError:
+            pass

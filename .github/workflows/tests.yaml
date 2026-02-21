@@ -15,7 +15,10 @@ permissions:
   pull-requests: write  # required to post PR comments
 
 jobs:
-  test:
+  # ------------------------------------------------------------------
+  # Unit tests (fast, no Klipper dependency)
+  # ------------------------------------------------------------------
+  unit-test:
     runs-on: ubuntu-latest
 
     steps:
@@ -36,25 +39,24 @@ jobs:
       - name: Install dependencies
         run: .venv/bin/pip install -r requirements.txt
 
-      - name: Run tests with coverage
+      - name: Run unit tests with coverage
         run: |
-          .venv/bin/python -m pytest \
+          .venv/bin/python -m pytest tests/ \
             --cov=extras \
             --cov-report=term-missing \
             --cov-report=html:coverage-report \
             --cov-report=xml:coverage.xml \
             --junitxml=test-results.xml
 
-#      - name: Post coverage comment on PR
-#        if: github.event_name == 'pull_request'
-#        uses: MishaKav/pytest-coverage-comment@main
-#        with:
-#          pytest-xml-coverage-path: coverage.xml
-#          junitxml-path: test-results.xml
-#          title: Coverage Report
-#          badge-title: Coverage
-#          report-only-changed-files: 'true'
-
+      - name: Post coverage comment on PR
+        if: github.event_name == 'pull_request'
+        uses: MishaKav/pytest-coverage-comment@main
+        with:
+          pytest-xml-coverage-path: coverage.xml
+          junitxml-path: test-results.xml
+          title: Coverage Report
+          badge-title: Coverage
+          report-only-changed-files: 'true'
 
       - name: Write coverage summary to job log
         if: always()
@@ -71,4 +73,77 @@ jobs:
           name: coverage-report
           path: coverage-report/
           if-no-files-found: error
+          retention-days: 30
+
+  # ------------------------------------------------------------------
+  # Klippy integration tests (runs AFC under a real Klipper process)
+  # ------------------------------------------------------------------
+  klippy-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements.txt
+
+      - name: Create virtual environment
+        run: python -m venv .venv
+
+      - name: Install Python test dependencies
+        run: .venv/bin/pip install -r requirements.txt
+
+      # Klipper is not on PyPI — clone it so we can run "python -m klippy".
+      - name: Clone Klipper
+        run: git clone --depth 1 https://github.com/Klipper3d/klipper.git klipper
+
+      - name: Install Klipper Python dependencies
+        run: .venv/bin/pip install -r klipper/scripts/klippy-requirements.txt
+
+      # chelper is a C extension that Klipper compiles at runtime.
+      # Build it now so the klippy subprocess can use it.
+      - name: Build Klipper chelper
+        run: |
+          cd klipper
+          python scripts/build_chelper.py 2>/dev/null || \
+            python klippy/chelper/__init__.py 2>/dev/null || \
+            make PYTHON=$(pwd)/../.venv/bin/python scripts/build_chelper.py || \
+            true  # chelper may auto-build on first import; continue
+
+      # Install the ARM cross-compiler toolchain needed to build STM32H723 firmware.
+      - name: Install ARM cross-compiler
+        run: sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi
+
+      # Build the STM32H723 MCU dict.
+      # The dict file is generated during compilation (before linking), so we
+      # allow link errors (|| true) and verify the dict was produced.
+      - name: Build STM32H723 firmware dict
+        run: |
+          cp tests/klippy/stm32h723.config klipper/.config
+          make -C klipper olddefconfig
+          make -C klipper || true  # link may fail with newer GCC LTO; dict is generated earlier
+          test -f klipper/out/klipper.dict || (echo "ERROR: klipper.dict not generated" && exit 1)
+          mkdir -p tests/dict
+          cp klipper/out/klipper.dict tests/dict/stm32h723.dict
+
+      - name: Run klippy integration tests
+        env:
+          KLIPPER_PATH: ${{ github.workspace }}/klipper
+          DICTDIR: ${{ github.workspace }}/tests/dict
+        run: |
+          .venv/bin/python -m pytest tests/klippy/ -v \
+            --junitxml=klippy-test-results.xml
+
+
+      - name: Upload klippy test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: klippy-test-results
+          path: klippy-test-results.xml
+          if-no-files-found: warn
           retention-days: 30

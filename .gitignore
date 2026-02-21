@@ -134,6 +134,10 @@ klipper/
 
 uv.lock
 
+# Klippy integration test artifacts (generated in CI, not committed)
+tests/dict/*.dict
+klippy-test-results.xml
+
 .idea/
 site/
 
