@@ -167,7 +167,28 @@ cp klipper/out/klipper.dict tests/dict/stm32h723.dict
 > The `klipper.dict` file is produced before linking, so the `|| true` keeps the
 > build going. The final `test` command in CI verifies the dict was produced.
 
-#### Running against Klipper
+#### Running all tests with the helper script
+
+`run-tests.sh` runs unit tests and klippy integration tests against both
+Klipper and Kalico in one command:
+
+```shell
+./run-tests.sh
+```
+
+Flags to run a subset:
+
+| Flag | What runs |
+|------|-----------|
+| `--unit` | Unit tests only |
+| `--klippy` | Klippy integration tests against both firmwares |
+| `--klipper` | Klippy integration tests against Klipper only |
+| `--kalico` | Klippy integration tests against Kalico only |
+
+The script auto-builds `tests/dict/stm32h723.dict` from whichever firmware is
+being tested if the dict file doesn't exist yet.
+
+#### Running against Klipper manually
 
 ```shell
 KLIPPER_PATH=$(pwd)/klipper \
