@@ -26,6 +26,25 @@ failure() { echo "${red}${bold}FAIL${reset} $*"; }
 warn()    { echo "${yellow}${bold}WARN${reset} $*"; }
 
 # ── Argument parsing ───────────────────────────────────────────────────────────
+usage() {
+    cat <<EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Run AFC tests locally.
+
+Options:
+  --unit      Run unit tests only (fast, no Klipper required)
+  --klippy    Run klippy integration tests only (both klipper and kalico)
+  --klipper   Run klippy integration tests against klipper only
+  --kalico    Run klippy integration tests against kalico only
+  --help      Show this help message and exit
+
+With no options, runs unit tests + klippy integration tests against both
+klipper and kalico. Klippy tests are skipped if the firmware directory is
+not found (see CONTRIBUTING.md for setup instructions).
+EOF
+}
+
 RUN_UNIT=true
 RUN_KLIPPER=true
 RUN_KALICO=true
@@ -36,7 +55,8 @@ for arg in "$@"; do
         --klippy)  RUN_UNIT=false; RUN_KLIPPER=true;  RUN_KALICO=true  ;;
         --klipper) RUN_UNIT=false; RUN_KLIPPER=true;  RUN_KALICO=false ;;
         --kalico)  RUN_UNIT=false; RUN_KLIPPER=false; RUN_KALICO=true  ;;
-        *) echo "Unknown option: $arg"; exit 1 ;;
+        --help)    usage; exit 0 ;;
+        *) echo "Unknown option: $arg"; echo; usage; exit 1 ;;
     esac
 done
 
