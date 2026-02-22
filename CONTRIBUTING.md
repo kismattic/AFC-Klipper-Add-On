@@ -55,11 +55,11 @@ You can do this by running the following:
 # Install virtualenv globally
 pip install virtualenv
 
-# Create local virtual environment (will create directory named "venv" in your working directory)
-python3 -m venv venv
+# Create local virtual environment (will create directory named ".venv" in your working directory)
+python3 -m venv .venv
 
 # Activate the virtual environment in your current terminal/shell
-source venv/bin/activate
+source .venv/bin/activate
 ```
 
 ## Install dependencies
