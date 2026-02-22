@@ -107,8 +107,7 @@ jobs:
       - name: Build chelper
         run: |
           cd klipper
-          python scripts/build_chelper.py 2>/dev/null || \
-            python klippy/chelper/__init__.py 2>/dev/null || \
+          python klippy/chelper/__init__.py 2>/dev/null || \
             make PYTHON=$(pwd)/../.venv/bin/python scripts/build_chelper.py || \
             true  # chelper may auto-build on first import; continue
 

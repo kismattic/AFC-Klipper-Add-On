@@ -135,13 +135,7 @@ git clone --depth 1 https://github.com/Klipper3d/klipper.git klipper
 pip install -r klipper/scripts/klippy-requirements.txt
 ```
 
-**3. Build Klipper's C helper** (`chelper`):
-
-```shell
-cd klipper && python scripts/build_chelper.py; cd ..
-```
-
-**4. Install the ARM cross-compiler** needed to compile the STM32H723 firmware
+**3. Install the ARM cross-compiler** needed to compile the STM32H723 firmware
 and generate the MCU dictionary file:
 
 ```shell
@@ -152,7 +146,7 @@ sudo apt-get install -y gcc-arm-none-eabi libnewlib-arm-none-eabi
 sudo pacman -S arm-none-eabi-gcc arm-none-eabi-newlib
 ```
 
-**5. Build the STM32H723 MCU dictionary:**
+**4. Build the STM32H723 MCU dictionary:**
 
 ```shell
 cp tests/klippy/stm32h723.config klipper/.config
