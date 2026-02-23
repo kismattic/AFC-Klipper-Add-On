@@ -149,3 +149,49 @@ class TestPoopMethod:
         last_call = gm.move_with_transform.call_args_list[-1]
         speed = last_call[0][1]
         assert speed == p.fast_z
+
+    def test_verbose_fan_messages_logged_when_full_fan_and_verbose(self):
+        """verbose=True + full_fan=True should log fan-related info messages."""
+        p = _make_poop({
+            "verbose": True,
+            "full_fan": True,
+            "purge_length": 40.0,
+            "max_iteration_length": 40.0,
+        })
+        self._run_poop(p)
+        info_msgs = [m for lvl, m in p.logger.messages if lvl == "info"]
+        fan_msgs = [m for m in info_msgs if "fan" in m.lower() or "Fan" in m]
+        assert len(fan_msgs) >= 2  # "Set Cooling Fan" + "Restore fan speed"
+
+
+# ── __init__ via MockConfig ───────────────────────────────────────────────────
+
+class TestPoopInitFromConfig:
+    def test_init_reads_config_values(self):
+        from tests.conftest import MockConfig, MockPrinter, MockAFC
+        afc = MockAFC()
+        printer = MockPrinter(afc=afc)
+        config = MockConfig(
+            printer=printer,
+            values={
+                "purge_loc_xy": "50,75",
+                "purge_start": 5.0,
+                "purge_spd": 8.0,
+                "fast_z": 150.0,
+                "z_lift": 30.0,
+                "restore_position": False,
+                "full_fan": True,
+                "purge_length": 80.0,
+                "purge_length_min": 60.0,
+                "max_iteration_length": 35.0,
+                "iteration_z_raise": 5.0,
+                "iteration_z_change": 0.5,
+                "verbose": False,
+                "comment": False,
+            },
+        )
+        p = afc_poop(config)
+        assert p.purge_loc_xy == "50,75"
+        assert p.fast_z == 150.0
+        assert p.full_fan is True
+        assert p.purge_length == 80.0

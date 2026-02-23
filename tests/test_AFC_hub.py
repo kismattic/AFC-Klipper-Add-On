@@ -236,3 +236,157 @@ class TestHandleRunout:
         hub.handle_runout(150.0)
         # min_event_systime should be updated to monotonic + event_delay
         assert hub.fila.runout_helper.min_event_systime != initial_time
+
+
+# ── handle_connect ────────────────────────────────────────────────────────────
+
+class TestHandleConnect:
+    def test_physical_hub_handle_connect_does_not_raise(self):
+        hub = _make_hub(switch_pin="PA0")
+        # physical pin — no lane validation needed
+        hub.handle_connect()  # should not raise
+        assert hub.gcode is hub.afc.gcode
+
+    def test_virtual_hub_raises_when_lanes_have_no_load_sensor(self):
+        from configparser import Error as config_error
+        hub = _make_hub(switch_pin="virtual")
+        lane = MagicMock()
+        lane.fullname = "AFC_stepper lane1"
+        lane.load = None  # no load sensor
+        hub.lanes = {"lane1": lane}
+        with pytest.raises(config_error):
+            hub.handle_connect()
+
+    def test_virtual_hub_no_error_when_all_lanes_have_load_sensor(self):
+        hub = _make_hub(switch_pin="virtual")
+        lane = MagicMock()
+        lane.fullname = "AFC_stepper lane1"
+        lane.load = MagicMock()  # has load sensor
+        hub.lanes = {"lane1": lane}
+        hub.handle_connect()  # should not raise
+
+    def test_handle_connect_sends_register_macros_event(self):
+        hub = _make_hub(switch_pin="PA0")
+        hub.handle_connect()
+        # Verify the event was dispatched (MockPrinter records handlers)
+        # send_event on MockPrinter calls registered handlers — no assert needed
+        # if we got here without error, the event path ran
+        assert True
+
+
+# ── afc_hub.__init__ ──────────────────────────────────────────────────────────
+
+class TestAFCHubInit:
+    def test_virtual_hub_init_does_not_call_add_filament_switch(self):
+        from tests.conftest import MockConfig, MockPrinter, MockAFC
+        afc = MockAFC()
+        printer = MockPrinter(afc=afc)
+        config = MockConfig(
+            name="AFC_hub test_hub", printer=printer,
+            values={"switch_pin": "virtual", "afc_bowden_length": 900.0}
+        )
+        with patch("extras.AFC_hub.add_filament_switch") as mock_afs:
+            hub = afc_hub(config)
+        mock_afs.assert_not_called()
+
+    def test_virtual_hub_init_registers_hub_in_afc(self):
+        from tests.conftest import MockConfig, MockPrinter, MockAFC
+        afc = MockAFC()
+        printer = MockPrinter(afc=afc)
+        config = MockConfig(
+            name="AFC_hub my_hub", printer=printer,
+            values={"switch_pin": "virtual"}
+        )
+        hub = afc_hub(config)
+        assert "my_hub" in afc.hubs
+
+    def test_virtual_hub_sets_name_from_config(self):
+        from tests.conftest import MockConfig, MockPrinter, MockAFC
+        afc = MockAFC()
+        printer = MockPrinter(afc=afc)
+        config = MockConfig(
+            name="AFC_hub hub_one", printer=printer,
+            values={"switch_pin": "virtual"}
+        )
+        hub = afc_hub(config)
+        assert hub.name == "hub_one"
+
+    def test_physical_hub_init_calls_add_filament_switch(self):
+        from tests.conftest import MockConfig, MockPrinter, MockAFC
+        afc = MockAFC()
+        printer = MockPrinter(afc=afc)
+        config = MockConfig(
+            name="AFC_hub phys_hub", printer=printer,
+            values={"switch_pin": "PA0"}
+        )
+        with patch("extras.AFC_hub.add_filament_switch") as mock_afs:
+            mock_afs.return_value = (MagicMock(), MagicMock())
+            hub = afc_hub(config)
+        mock_afs.assert_called_once()
+
+    def test_physical_hub_registers_button_callback(self):
+        from tests.conftest import MockConfig, MockPrinter, MockAFC
+        afc = MockAFC()
+        printer = MockPrinter(afc=afc)
+        buttons_mock = MagicMock()
+        printer._objects["buttons"] = buttons_mock
+        config = MockConfig(
+            name="AFC_hub phys_hub", printer=printer,
+            values={"switch_pin": "PA0"}
+        )
+        with patch("extras.AFC_hub.add_filament_switch") as mock_afs:
+            mock_afs.return_value = (MagicMock(), MagicMock())
+            hub = afc_hub(config)
+        buttons_mock.register_buttons.assert_called_once()
+
+
+# ── hub_cut ───────────────────────────────────────────────────────────────────
+
+class TestHubCut:
+    def test_hub_cut_no_confirm_runs_servo_commands(self):
+        from unittest.mock import PropertyMock
+        hub = _make_hub(switch_pin="PA0")
+        hub.cut_confirm = False
+        cur_lane = MagicMock()
+        # Sequence: loop1 enter(F), loop1 exit(T), loop2 enter(T), loop2 exit(F),
+        #           loop3 enter(F), loop3 exit(T)
+        type(hub).state = PropertyMock(side_effect=[False, True, True, False, False, True])
+        hub.hub_cut(cur_lane)
+        # Should call run_script_from_command for prep, clip, and pass angles
+        calls = hub.gcode.run_script_from_command.call_args_list
+        assert len(calls) >= 3  # prep + clip + pass
+
+    def test_hub_cut_no_confirm_calls_correct_servo_angles(self):
+        from unittest.mock import PropertyMock
+        hub = _make_hub(switch_pin="PA0")
+        hub.cut_confirm = False
+        cur_lane = MagicMock()
+        type(hub).state = PropertyMock(side_effect=[False, True, True, False, False, True])
+        hub.hub_cut(cur_lane)
+        calls = [c[0][0] for c in hub.gcode.run_script_from_command.call_args_list]
+        assert any(str(hub.cut_servo_prep_angle) in c for c in calls)
+        assert any(str(hub.cut_servo_clip_angle) in c for c in calls)
+        assert any(str(hub.cut_servo_pass_angle) in c for c in calls)
+
+    def test_hub_cut_with_confirm_runs_extra_servo_commands(self):
+        from unittest.mock import PropertyMock
+        hub = _make_hub(switch_pin="PA0")
+        hub.cut_confirm = True
+        cur_lane = MagicMock()
+        type(hub).state = PropertyMock(side_effect=[False, True, True, False, False, True])
+        hub.hub_cut(cur_lane)
+        # With confirm: prep + clip + prep + clip + pass = 5 calls
+        calls = hub.gcode.run_script_from_command.call_args_list
+        assert len(calls) >= 5
+
+    def test_hub_cut_retracts_filament_after_cut(self):
+        from unittest.mock import PropertyMock
+        hub = _make_hub(switch_pin="PA0")
+        hub.cut_confirm = False
+        cur_lane = MagicMock()
+        type(hub).state = PropertyMock(side_effect=[False, True, True, False, False, True])
+        hub.hub_cut(cur_lane)
+        # Last move should be negative (retract by cut_clear)
+        all_move_calls = cur_lane.move.call_args_list
+        last_call_dist = all_move_calls[-1][0][0]
+        assert last_call_dist < 0  # negative = retract

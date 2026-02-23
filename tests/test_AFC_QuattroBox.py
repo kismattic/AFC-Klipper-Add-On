@@ -156,3 +156,31 @@ class TestLaneToolUnloaded:
         unit.lane_tool_unloaded(lane)
         # lane_tool_unloaded calls super() which calls afc_led with led_ready
         unit.afc.function.afc_led.assert_any_call(lane.led_ready, lane.led_index)
+
+
+# ── handle_connect ────────────────────────────────────────────────────────────
+
+class TestHandleConnect:
+    def test_handle_connect_sets_logo_html(self):
+        unit = _make_quattro()
+        unit.set_logo_color = MagicMock()
+        unit.handle_connect()
+        assert "Quattro Box Ready" in unit.logo
+
+    def test_handle_connect_sets_logo_error_html(self):
+        unit = _make_quattro()
+        unit.set_logo_color = MagicMock()
+        unit.handle_connect()
+        assert "Quattro Box Not Ready" in unit.logo_error
+
+    def test_handle_connect_calls_set_logo_color_with_logo_color(self):
+        unit = _make_quattro()
+        unit.set_logo_color = MagicMock()
+        unit.handle_connect()
+        unit.set_logo_color.assert_called_once_with(unit.led_logo_color)
+
+    def test_handle_connect_registers_unit_in_afc_units(self):
+        unit = _make_quattro(name="quattro_test")
+        unit.set_logo_color = MagicMock()
+        unit.handle_connect()
+        assert unit.afc.units.get("quattro_test") is unit

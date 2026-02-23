@@ -105,6 +105,8 @@ class KlippyTestItem(pytest.Item):
 
     def setup(self):
         self.tmp_dir = pathlib.Path(tempfile.mkdtemp())
+        # AFC_logger writes to AFC.log in the same directory as klippy.log.
+        self.afc_log_path = self.tmp_dir / "AFC.log"
 
     def teardown(self):
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
@@ -112,14 +114,18 @@ class KlippyTestItem(pytest.Item):
     def runtest(self):
         gcode_file = self.tmp_dir / "_test_.gcode"
         output_file = self.tmp_dir / "_test_.output"
+        log_file = self.tmp_dir / "klippy.log"
 
         gcode_file.write_text("\n".join(self.gcode) + "\n")
 
-        # Standard Klipper is invoked as a script, not a runnable package.
+        # Run klippy via the launcher so that QueueListener's bg_thread is
+        # daemonised, allowing klippy to exit cleanly when -l is passed.
+        launcher = pathlib.Path(__file__).parent / "klippy_launcher.py"
         klippy_script = self.klipper_path / "klippy" / "klippy.py"
-        args = [sys.executable, str(klippy_script), str(self.config_file)]
+        args = [sys.executable, str(launcher), str(klippy_script), str(self.config_file)]
         args += ["-i", str(gcode_file)]
         args += ["-o", str(output_file)]
+        args += ["-l", str(log_file)]  # enables AFC.log in the same directory
         args += ["-v"]
         for df in self.dictionaries:
             args += ["-d", df]
@@ -150,15 +156,36 @@ class KlippyTestItem(pytest.Item):
             err = excinfo.value
             output = err.output or ""
             tail = output[-4000:] if len(output) > 4000 else output
-            return "\n".join(
-                [
-                    f"Klippy test failed (exit {err.returncode}): {self.name}",
-                    f"  Config:       {self.config_file}",
-                    f"  Dictionaries: {', '.join(self.dictionaries)}",
-                    "",
-                    tail,
-                ]
-            )
+            lines = [
+                f"Klippy test failed (exit {err.returncode}): {self.name}",
+                f"  Config:       {self.config_file}",
+                f"  Dictionaries: {', '.join(self.dictionaries)}",
+            ]
+            if tail:
+                lines += ["", tail]
+            # Include klippy.log — with -l, klippy writes its detailed log here
+            # rather than to stdout, so stdout is mostly empty on failure.
+            klippy_log_path = self.tmp_dir / "klippy.log"
+            if klippy_log_path.exists():
+                klippy_content = klippy_log_path.read_text(errors="replace")
+                if klippy_content:
+                    klippy_tail = klippy_content[-4000:] if len(klippy_content) > 4000 else klippy_content
+                    lines += [
+                        "",
+                        "─── klippy.log ────────────────────────────────────────────",
+                        klippy_tail,
+                    ]
+            # Include AFC.log when it was written (requires -l to have been passed).
+            if self.afc_log_path.exists():
+                afc_content = self.afc_log_path.read_text(errors="replace")
+                if afc_content:
+                    afc_tail = afc_content[-4000:] if len(afc_content) > 4000 else afc_content
+                    lines += [
+                        "",
+                        "─── AFC.log ───────────────────────────────────────────────",
+                        afc_tail,
+                    ]
+            return "\n".join(lines)
         return super().repr_failure(excinfo=excinfo, style=style)
 
 

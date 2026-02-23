@@ -361,6 +361,8 @@ class MockAFC:
         self.prep_done = False
         self.spoolman = None
         self.disable_weight_check = False
+        self.ignore_spoolman_material_temps = False
+        self.default_material_type = "PLA"
         self.bypass = MagicMock()
         self.save_vars = MagicMock()
         self.tool_cmds: dict = {}

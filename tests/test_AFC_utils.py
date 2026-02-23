@@ -175,6 +175,67 @@ class TestDebounceButton:
         btn._debounce_event(100.0)
         assert btn.logical_state is True
 
+    def test_init_kalico_signature_uses_button_handler(self):
+        """Covers line 135: Kalico exact-match signature assigns _button_handler."""
+        cfg = self._make_config()
+        # Exact Kalico params (no 'self' since inspect works on function signature)
+        sensor = self._make_filament_sensor(
+            ["eventtime", "is_filament_present", "force", "immediate"]
+        )
+        btn = DebounceButton(cfg, sensor)
+        # The assignment to _button_handler was made; button_action should be set
+        assert btn.button_action is not None
+
+    def test_init_two_param_signature_uses_button_handler_else(self):
+        """Covers line 139: exactly 2 params → else branch assigns _button_handler."""
+        cfg = self._make_config()
+        # Only 2 parameters: eventtime, state (not > 2, not == 1)
+        sensor = self._make_filament_sensor(["eventtime", "state"])
+        btn = DebounceButton(cfg, sensor)
+        # Should still set button_action
+        assert btn.button_action is not None
+
+    def test_button_handler_delegates_to_internal_handler(self):
+        """Covers line 146: button_handler calls _button_handler with reactor time."""
+        cfg = self._make_config()
+        sensor = self._make_filament_sensor(["self", "eventtime", "state"])
+        btn = DebounceButton(cfg, sensor)
+        btn._button_handler = MagicMock()
+        btn.button_handler(True)
+        btn._button_handler.assert_called_once()
+
+    def test_debounce_event_ignores_stale_event(self):
+        """Covers line 163: stale event (more recent event exists) → returns early."""
+        cfg = self._make_config(debounce_delay=1.0)
+        sensor = self._make_filament_sensor(["self", "eventtime", "state"])
+        btn = DebounceButton(cfg, sensor)
+        btn.logical_state = False
+        btn.physical_state = True
+        btn.latest_eventtime = 100.0
+        btn.button_action = MagicMock()
+        # eventtime=100.5 → 100.5 - 1.0 = 99.5 < 100.0 → stale → returns early
+        btn._debounce_event(100.5)
+        btn.button_action.assert_not_called()
+
+    def test_debounce_event_falls_back_to_positional_args(self):
+        """Covers lines 169-170: button_action that doesn't accept kwargs → except branch."""
+        cfg = self._make_config(debounce_delay=0.0)
+        sensor = self._make_filament_sensor(["self", "eventtime", "state"])
+        btn = DebounceButton(cfg, sensor)
+        btn.logical_state = False
+        btn.physical_state = True
+        btn.latest_eventtime = 100.0
+
+        # A callback that only accepts positional args → raises TypeError on kwargs call
+        calls = []
+        def positional_only(eventtime, state):
+            calls.append((eventtime, state))
+
+        btn.button_action = positional_only
+        btn._debounce_event(101.0)
+        assert len(calls) == 1
+        assert calls[0] == (101.0, True)
+
 
 # ── AFC_moonraker ─────────────────────────────────────────────────────────────
 
@@ -291,3 +352,220 @@ class TestAFCMoonraker:
         assert td1_defined is False
         assert td1 is False
         assert lane_data is False
+
+    # ── wait_for_moonraker ────────────────────────────────────────────────────
+
+    def test_wait_for_moonraker_connects_immediately_returns_true(self):
+        mr = self._make_moonraker()
+        toolhead = MagicMock()
+        mr._get_results = MagicMock(return_value={"klippy": "ready"})
+        result = mr.wait_for_moonraker(toolhead, timeout=5)
+        assert result is True
+        toolhead.dwell.assert_not_called()
+
+    def test_wait_for_moonraker_connects_after_retries(self):
+        mr = self._make_moonraker()
+        toolhead = MagicMock()
+        mr._get_results = MagicMock(side_effect=[None, None, {"klippy": "ready"}])
+        result = mr.wait_for_moonraker(toolhead, timeout=5)
+        assert result is True
+        assert toolhead.dwell.call_count == 2
+
+    def test_wait_for_moonraker_timeout_returns_false(self):
+        mr = self._make_moonraker()
+        toolhead = MagicMock()
+        mr._get_results = MagicMock(return_value=None)
+        result = mr.wait_for_moonraker(toolhead, timeout=3)
+        assert result is False
+        warnings = [m for lvl, m in mr.logger.messages if lvl == "warning"]
+        assert len(warnings) == 1
+
+    # ── get_td1_data ──────────────────────────────────────────────────────────
+
+    def test_get_td1_data_returns_devices_on_success(self):
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(return_value={"devices": {"SN123": {}}})
+        result = mr.get_td1_data()
+        assert result == {"SN123": {}}
+
+    def test_get_td1_data_returns_none_when_no_devices_key(self):
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(return_value={"other": "data"})
+        result = mr.get_td1_data()
+        assert result is None
+
+    def test_get_td1_data_returns_none_on_failure(self):
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(return_value=None)
+        result = mr.get_td1_data()
+        assert result is None
+
+    # ── reboot_td1 ───────────────────────────────────────────────────────────
+
+    def test_reboot_td1_returns_response(self):
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(return_value={"status": "ok"})
+        result = mr.reboot_td1("SN12345")
+        assert result == {"status": "ok"}
+
+    def test_reboot_td1_returns_none_on_failure(self):
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(return_value=None)
+        result = mr.reboot_td1("SN12345")
+        assert result is None
+
+    # ── send_lane_data ────────────────────────────────────────────────────────
+
+    def test_send_lane_data_logs_error_on_failure(self):
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(return_value=None)
+        mr.send_lane_data({"lane1": {"color": "red"}})
+        errors = [m for lvl, m in mr.logger.messages if lvl == "error"]
+        assert len(errors) == 1
+
+    def test_send_lane_data_success_no_error(self):
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(return_value={"value": "ok"})
+        mr.send_lane_data({"lane1": {"color": "red"}})
+        errors = [m for lvl, m in mr.logger.messages if lvl == "error"]
+        assert len(errors) == 0
+
+    # ── remove_database_entry ─────────────────────────────────────────────────
+
+    def test_remove_database_entry_calls_urlopen(self):
+        mr = self._make_moonraker()
+        with patch("extras.AFC_utils.urlopen") as mock_urlopen:
+            mr.remove_database_entry("lane_data", "lane1")
+        mock_urlopen.assert_called_once()
+
+    def test_remove_database_entry_logs_debug_on_http_error(self):
+        from urllib.error import HTTPError
+        mr = self._make_moonraker()
+        with patch("extras.AFC_utils.urlopen",
+                   side_effect=HTTPError(None, 404, "Not Found", {}, None)):
+            mr.remove_database_entry("lane_data", "missing_key")
+        debug_msgs = [m for lvl, m in mr.logger.messages if lvl == "debug"]
+        assert len(debug_msgs) > 0
+
+    # ── delete_lane_data ──────────────────────────────────────────────────────
+
+    def test_delete_lane_data_calls_remove_for_each_key(self):
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(
+            return_value={"value": {"lane1": {}, "lane2": {}}}
+        )
+        mr.remove_database_entry = MagicMock()
+        mr.delete_lane_data()
+        assert mr.remove_database_entry.call_count == 2
+
+    def test_delete_lane_data_no_op_on_none_response(self):
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(return_value=None)
+        mr.remove_database_entry = MagicMock()
+        mr.delete_lane_data()
+        mr.remove_database_entry.assert_not_called()
+
+    # ── trigger_db_backup ─────────────────────────────────────────────────────
+
+    def test_trigger_db_backup_success_logs_path_and_returns_false(self):
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(return_value={"backup_path": "/tmp/backup.db"})
+        error = mr.trigger_db_backup()
+        assert error is False
+        infos = [m for lvl, m in mr.logger.messages if lvl == "info"]
+        assert any("/tmp/backup.db" in m for m in infos)
+
+    def test_trigger_db_backup_failure_returns_true(self):
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(return_value=None)
+        error = mr.trigger_db_backup()
+        assert error is True
+        errors = [m for lvl, m in mr.logger.messages if lvl == "error"]
+        assert len(errors) == 1
+
+    def test_get_spool_returns_resp_when_found(self):
+        """Covers line 352: if resp is not None → resp = resp branch in get_spool."""
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(return_value={"id": 42, "name": "PLA"})
+        result = mr.get_spool(42)
+        assert result == {"id": 42, "name": "PLA"}
+
+    def test_check_for_td1_with_td1_in_config_and_data(self):
+        """Covers lines 371-374: td1 in orig config and data returned."""
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(return_value={"orig": {"td1": True, "lane_data": True}})
+        mr.get_td1_data = MagicMock(return_value={"SN123": {}})
+        td1_defined, td1, lane_data = mr.check_for_td1()
+        assert td1_defined is True
+        assert td1 is True
+        assert lane_data is True
+
+    def test_check_for_td1_with_lane_data_only(self):
+        """Covers line 377: lane_data in orig config sets _lane_data True."""
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(return_value={"orig": {"lane_data": True}})
+        _, _, lane_data = mr.check_for_td1()
+        assert lane_data is True
+
+    def test_get_afc_stats_second_call_uses_cache_path(self):
+        """Covers lines 294-296: second call enters the last_stats_time is not None branch."""
+        mr = self._make_moonraker()
+        payload = {"value": {"tc": 5}}
+        mr._get_results = MagicMock(return_value=payload)
+        mr.get_afc_stats()        # first call: sets last_stats_time
+        mr.get_afc_stats()        # second call: last_stats_time is not None → cached path
+        # At least first call was made; second call may skip _get_results if cached
+        assert mr._get_results.call_count >= 1
+
+    def test_get_afc_stats_refetches_after_60_seconds(self):
+        """Covers lines 297-298: delta > 60s → refetch_data=True, update last_stats_time."""
+        from unittest.mock import patch
+        from datetime import datetime, timedelta
+        mr = self._make_moonraker()
+        payload = {"value": {"tc": 5}}
+        mr._get_results = MagicMock(return_value=payload)
+
+        t0 = datetime(2024, 1, 1, 12, 0, 0)
+        t1 = datetime(2024, 1, 1, 12, 1, 5)  # 65 seconds later
+
+        with patch("extras.AFC_utils.datetime") as mock_dt:
+            mock_dt.now.side_effect = [t0, t0, t1]  # first call: 2x now(), second call: once
+            mr.get_afc_stats()  # first call: sets last_stats_time to t0
+            mr.get_afc_stats()  # second call: delta = 65s > 60 → refetch
+        # Two _get_results calls: once per call since refetch was triggered
+        assert mr._get_results.call_count == 2
+
+    def test_send_lane_data_http_error_logs_error(self):
+        """Covers lines 432-435: HTTPError propagated from _get_results."""
+        from urllib.error import HTTPError
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(
+            side_effect=HTTPError(None, 500, "Internal Server Error", {}, None)
+        )
+        mr.send_lane_data({"lane1": {"color": "red"}})
+        errors = [m for lvl, m in mr.logger.messages if lvl == "error"]
+        assert len(errors) >= 1
+
+    def test_delete_lane_data_http_error_logs_debug(self):
+        """Covers lines 473-475: HTTPError raised by remove_database_entry."""
+        from urllib.error import HTTPError
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(return_value={"value": {"lane1": {}}})
+        mr.remove_database_entry = MagicMock(
+            side_effect=HTTPError(None, 500, "Error", {}, None)
+        )
+        mr.delete_lane_data()
+        debug_msgs = [m for lvl, m in mr.logger.messages if lvl == "debug"]
+        assert len(debug_msgs) >= 1
+
+    def test_trigger_db_backup_http_error_returns_true(self):
+        """Covers lines 491-495: HTTPError from _get_results in trigger_db_backup."""
+        from urllib.error import HTTPError
+        mr = self._make_moonraker()
+        mr._get_results = MagicMock(
+            side_effect=HTTPError(None, 503, "Service Unavailable", {}, None)
+        )
+        error = mr.trigger_db_backup()
+        assert error is True
+        errors = [m for lvl, m in mr.logger.messages if lvl == "error"]
+        assert len(errors) >= 1

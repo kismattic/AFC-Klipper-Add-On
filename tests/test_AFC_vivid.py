@@ -203,3 +203,300 @@ class TestCmdAfcSelectLane:
         gcmd.get.return_value = "missing_lane"
         unit.cmd_AFC_SELECT_LANE(gcmd)
         gcmd.error.assert_called()
+
+
+# ── handle_connect ────────────────────────────────────────────────────────────
+
+class TestVividHandleConnect:
+    def test_handle_connect_sets_logo(self):
+        unit = _make_vivid()
+        unit.set_logo_color = MagicMock()
+        unit.handle_connect()
+        assert "ViViD Ready" in unit.logo
+
+    def test_handle_connect_sets_logo_error(self):
+        unit = _make_vivid()
+        unit.set_logo_color = MagicMock()
+        unit.handle_connect()
+        assert "ViViD Not Ready" in unit.logo_error
+
+    def test_handle_connect_registers_unit_in_afc(self):
+        unit = _make_vivid(name="vivid_1")
+        unit.set_logo_color = MagicMock()
+        unit.handle_connect()
+        assert unit.afc.units.get("vivid_1") is unit
+
+
+# ── system_Test ───────────────────────────────────────────────────────────────
+
+class TestVividSystemTest:
+    def test_system_test_calls_super_with_movement_disabled(self):
+        unit = _make_vivid()
+        lane = MagicMock()
+        with MagicMock() as super_mock:
+            from extras.AFC_BoxTurtle import afcBoxTurtle
+            with MagicMock() as patch_target:
+                from unittest.mock import patch
+                with patch.object(afcBoxTurtle, 'system_Test', return_value="ok") as mock_st:
+                    result = unit.system_Test(lane, 0.5, True, True)
+                    mock_st.assert_called_once_with(lane, 0.5, True, enable_movement=False)
+
+
+# ── prep_post_load ────────────────────────────────────────────────────────────
+
+class TestPrepPostLoad:
+    def test_returns_none(self):
+        unit = _make_vivid()
+        lane = MagicMock()
+        result = unit.prep_post_load(lane)
+        assert result is None
+
+
+# ── unselect_lane ─────────────────────────────────────────────────────────────
+
+class TestUnselectLane:
+    def test_calls_selector_stepper_move(self):
+        unit = _make_vivid()
+        unit.unselect_lane()
+        unit.selector_stepper_obj.move.assert_called_once_with(50, 100, 100, False)
+
+
+# ── move_to_hub ───────────────────────────────────────────────────────────────
+
+class TestMoveToHub:
+    def test_delegates_to_lane_move_to(self):
+        from extras.AFC_lane import SpeedMode, MoveDirection, AssistActive
+        unit = _make_vivid()
+        lane = MagicMock()
+        lane.move_to.return_value = (True, 100.0, False)
+        lane.load_es = "load_endstop"
+        result = unit.move_to_hub(lane, 100.0, MoveDirection.POS)
+        lane.move_to.assert_called_once()
+        assert result == (True, 100.0, False)
+
+    def test_returns_homed_distance_warn_tuple(self):
+        from extras.AFC_lane import SpeedMode, MoveDirection
+        unit = _make_vivid()
+        lane = MagicMock()
+        lane.move_to.return_value = (False, 50.0, True)
+        lane.load_es = "load_endstop"
+        homed, dist, warn = unit.move_to_hub(lane, 50.0, MoveDirection.NEG)
+        assert homed is False
+        assert warn is True
+
+
+# ── select_lane ───────────────────────────────────────────────────────────────
+
+class TestSelectLane:
+    def test_returns_none_when_no_selector_endstop(self):
+        unit = _make_vivid()
+        lane = _make_lane("lane1", has_selector=False)
+        lane.selector_endstop = None
+        result = unit.select_lane(lane)
+        assert result is None
+
+    def test_returns_true_and_zero_when_already_selected_and_enabled(self):
+        unit = _make_vivid()
+        lane = _make_lane("lane1", has_selector=True)
+        lane.fila_selector.get_status.return_value = {"filament_detected": True}
+        # stepper enabled
+        stepper_enable = MagicMock()
+        stepper_enable.get_status.return_value = {
+            "steppers": {f"AFC_stepper {unit.selector_stepper}": True}
+        }
+        unit.printer._objects["stepper_enable"] = stepper_enable
+        result = unit.select_lane(lane)
+        assert result == (True, 0.0)
+
+    def test_calls_homing_when_not_selected(self):
+        unit = _make_vivid()
+        lane = _make_lane("lane1", has_selector=True)
+        lane.fila_selector.get_status.return_value = {"filament_detected": False}
+        unit.printer._objects = {}  # no stepper_enable → enabled=False
+        unit.selector_stepper_obj.do_homing_move.return_value = (True, 15.0)
+        homed, dist = unit.select_lane(lane)
+        assert homed is True
+        assert dist == 15.0
+        unit.selector_stepper_obj.do_homing_move.assert_called_once()
+
+    def test_calls_unselect_lane_when_disabled_but_selector_triggered(self):
+        """When stepper not enabled but selector triggered, unselect_lane is called first."""
+        unit = _make_vivid()
+        lane = _make_lane("lane1", has_selector=True)
+        lane.fila_selector.get_status.return_value = {"filament_detected": True}
+        # stepper disabled (no stepper_enable object)
+        unit.printer._objects = {}
+        unit.unselect_lane = MagicMock()
+        unit.selector_stepper_obj.do_homing_move.return_value = (True, 10.0)
+        unit.select_lane(lane)
+        unit.unselect_lane.assert_called_once()
+
+
+# ── calibrate_lane ────────────────────────────────────────────────────────────
+
+class TestCalibrateLane:
+    def test_returns_correct_tuple(self):
+        from extras.AFC_lane import AFCLaneState
+        unit = _make_vivid()
+        lane = MagicMock()
+        unit.eject_lane = MagicMock()
+        result = unit.calibrate_lane(lane, 0)
+        assert result == (True, "calibration_lane", 0)
+
+    def test_sets_loaded_to_hub_false(self):
+        unit = _make_vivid()
+        lane = MagicMock()
+        unit.eject_lane = MagicMock()
+        unit.calibrate_lane(lane, 0)
+        assert lane.loaded_to_hub is False
+
+    def test_sets_calibrated_lane_false(self):
+        unit = _make_vivid()
+        lane = MagicMock()
+        unit.eject_lane = MagicMock()
+        unit.calibrate_lane(lane, 0)
+        assert lane.calibrated_lane is False
+
+    def test_calls_eject_lane(self):
+        unit = _make_vivid()
+        lane = MagicMock()
+        unit.eject_lane = MagicMock()
+        unit.calibrate_lane(lane, 5.0)
+        unit.eject_lane.assert_called_once_with(lane)
+
+
+# ── _get_selector_enabled except branch ───────────────────────────────────────
+
+class TestGetSelectorEnabledExceptBranch:
+    def test_returns_false_when_stepper_key_missing_from_steppers(self):
+        """Covers the except branch when the specific stepper key is absent."""
+        unit = _make_vivid()
+        stepper_enable = MagicMock()
+        stepper_enable.get_status.return_value = {"steppers": {}}  # key not present
+        unit.printer._objects["stepper_enable"] = stepper_enable
+        result = unit._get_selector_enabled()
+        assert result is False
+
+
+# ── prep_load ─────────────────────────────────────────────────────────────────
+
+class TestPrepLoad:
+    def test_calibrated_lane_sets_loaded_to_hub(self):
+        unit = _make_vivid()
+        lane = MagicMock()
+        lane.calibrated_lane = True
+        lane.dist_hub = 200.0
+        lane.move_to.return_value = (True, 200.0, False)
+        unit.lane_loading = MagicMock()
+        unit.select_lane = MagicMock()
+        unit.lane_loaded = MagicMock()
+
+        unit.prep_load(lane)
+
+        assert lane.loaded_to_hub is True
+        unit.lane_loading.assert_called_once_with(lane)
+        unit.select_lane.assert_called_once_with(lane, sel_prep=True)
+        unit.lane_loaded.assert_called_once_with(lane)
+
+    def test_disables_steppers_and_selects_loaded_lane(self):
+        unit = _make_vivid()
+        lane = MagicMock()
+        lane.calibrated_lane = True
+        lane.dist_hub = 200.0
+        lane.move_to.return_value = (True, 200.0, False)
+        unit.lane_loading = MagicMock()
+        unit.select_lane = MagicMock()
+        unit.lane_loaded = MagicMock()
+
+        unit.prep_load(lane)
+
+        unit.selector_stepper_obj.do_enable.assert_called_with(False)
+        unit.drive_stepper_obj.do_enable.assert_called_with(False)
+        unit.afc.function.select_loaded_lane.assert_called_once()
+
+    def test_uncalibrated_lane_updates_dist_hub_and_config(self):
+        unit = _make_vivid()
+        lane = MagicMock()
+        lane.calibrated_lane = False
+        lane.move_to.return_value = (True, 300.0, False)
+        unit.lane_loading = MagicMock()
+        unit.select_lane = MagicMock()
+        unit.lane_loaded = MagicMock()
+
+        unit.prep_load(lane)
+
+        assert lane.calibrated_lane is True
+        assert lane.dist_hub == round(300.0, 2) + AFC_vivid.LANE_OVERSHOOT
+        unit.afc.function.ConfigRewrite.assert_called()
+
+    def test_not_homed_skips_lane_loaded(self):
+        unit = _make_vivid()
+        lane = MagicMock()
+        lane.calibrated_lane = True
+        lane.dist_hub = 200.0
+        lane.move_to.return_value = (False, 0.0, False)
+        unit.lane_loading = MagicMock()
+        unit.select_lane = MagicMock()
+        unit.lane_loaded = MagicMock()
+
+        unit.prep_load(lane)
+
+        unit.lane_loaded.assert_not_called()
+        # Steppers are disabled regardless of homing result
+        unit.selector_stepper_obj.do_enable.assert_called_with(False)
+
+
+# ── eject_lane ────────────────────────────────────────────────────────────────
+
+class TestEjectLane:
+    def test_calls_select_and_unselect(self):
+        unit = _make_vivid()
+        lane = MagicMock()
+        lane.dist_hub = 200.0
+        unit.select_lane = MagicMock()
+        unit.unselect_lane = MagicMock()
+
+        unit.eject_lane(lane)
+
+        unit.select_lane.assert_called_once_with(lane)
+        unit.unselect_lane.assert_called_once()
+
+    def test_disables_steppers(self):
+        unit = _make_vivid()
+        lane = MagicMock()
+        lane.dist_hub = 200.0
+        unit.select_lane = MagicMock()
+        unit.unselect_lane = MagicMock()
+
+        unit.eject_lane(lane)
+
+        unit.selector_stepper_obj.do_enable.assert_called_with(False)
+        unit.drive_stepper_obj.do_enable.assert_called_with(False)
+
+    def test_adjusts_distance_when_dist_hub_over_400(self):
+        from extras.AFC_lane import MoveDirection
+        unit = _make_vivid()
+        lane = MagicMock()
+        lane.dist_hub = 600.0  # > 400 → should subtract LANE_OVERSHOOT+100
+        unit.select_lane = MagicMock()
+        unit.unselect_lane = MagicMock()
+
+        unit.eject_lane(lane)
+
+        expected_dist = (600.0 - (AFC_vivid.LANE_OVERSHOOT + 100)) * MoveDirection.NEG
+        call_args = lane.move_to.call_args[0]
+        assert call_args[0] == expected_dist
+
+    def test_does_not_adjust_distance_when_dist_hub_at_or_below_400(self):
+        from extras.AFC_lane import MoveDirection
+        unit = _make_vivid()
+        lane = MagicMock()
+        lane.dist_hub = 300.0  # <= 400 → full dist used
+        unit.select_lane = MagicMock()
+        unit.unselect_lane = MagicMock()
+
+        unit.eject_lane(lane)
+
+        expected_dist = 300.0 * MoveDirection.NEG
+        call_args = lane.move_to.call_args[0]
+        assert call_args[0] == expected_dist

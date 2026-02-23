@@ -242,3 +242,81 @@ class TestTipForm:
         tip.tip_form()
         info_msgs = [m for lvl, m in tip.logger.messages if lvl == "info"]
         assert any("Done" in m for m in info_msgs)
+
+    def test_toolchange_temp_set_when_positive_no_skinnydip(self):
+        tip = _make_tip_form({"toolchange_temp": 150.0, "use_skinnydip": False})
+        tip.afc_extrude = MagicMock()
+        pheaters, heater = self._setup_toolhead(tip)
+        tip.tip_form()
+        # set_temperature should be called with toolchange_temp and wait=True
+        calls = pheaters.set_temperature.call_args_list
+        temp_calls = [c for c in calls if c[0][1] == 150.0]
+        assert len(temp_calls) >= 1
+        assert temp_calls[0][0][2] is True  # wait=True
+
+    def test_toolchange_temp_no_wait_when_skinnydip_enabled(self):
+        tip = _make_tip_form({"toolchange_temp": 150.0, "use_skinnydip": True})
+        tip.afc_extrude = MagicMock()
+        tip.reactor = MagicMock()
+        pheaters, heater = self._setup_toolhead(tip)
+        tip.tip_form()
+        calls = pheaters.set_temperature.call_args_list
+        temp_calls = [c for c in calls if c[0][1] == 150.0]
+        assert len(temp_calls) >= 1
+        assert temp_calls[0][0][2] is False  # wait=False
+
+    def test_temp_restored_when_heater_target_changed_during_tip_form(self):
+        tip = _make_tip_form({"toolchange_temp": 150.0})
+        tip.afc_extrude = MagicMock()
+        initial_temp = 200.0
+        heater = MagicMock()
+        heater.target_temp = initial_temp
+        extruder = MagicMock()
+        extruder.get_heater.return_value = heater
+        tip.afc.toolhead = MagicMock()
+        tip.afc.toolhead.get_extruder.return_value = extruder
+        pheaters = MagicMock()
+
+        def update_temp(heater_obj, temp, wait=True):
+            heater_obj.target_temp = temp
+
+        pheaters.set_temperature.side_effect = update_temp
+        tip.printer.lookup_object = MagicMock(return_value=pheaters)
+        tip.tip_form()
+        # Last set_temperature call should restore original temp
+        assert pheaters.set_temperature.call_count >= 2
+        last_call = pheaters.set_temperature.call_args_list[-1]
+        assert last_call[0][1] == initial_temp
+
+    def test_cmd_test_tip_forming_calls_tip_form(self):
+        tip = _make_tip_form()
+        tip.tip_form = MagicMock()
+        gcmd = MagicMock()
+        tip.cmd_TEST_AFC_TIP_FORMING(gcmd)
+        tip.tip_form.assert_called_once()
+
+
+# ── __init__ via MockConfig ───────────────────────────────────────────────────
+
+class TestFormTipInit:
+    def test_init_from_config_sets_defaults(self):
+        from tests.conftest import MockConfig, MockPrinter, MockAFC
+        afc = MockAFC()
+        printer = MockPrinter(afc=afc)
+        config = MockConfig(printer=printer)
+        tip = afc_tip_form(config)
+        assert tip.ramming_volume == 0.0
+        assert tip.cooling_moves == 4
+        assert tip.use_skinnydip is False
+
+    def test_init_from_config_reads_custom_values(self):
+        from tests.conftest import MockConfig, MockPrinter, MockAFC
+        afc = MockAFC()
+        printer = MockPrinter(afc=afc)
+        config = MockConfig(printer=printer, values={
+            "ramming_volume": 15.0,
+            "cooling_moves": 6,
+        })
+        tip = afc_tip_form(config)
+        assert tip.ramming_volume == 15.0
+        assert tip.cooling_moves == 6

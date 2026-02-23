@@ -202,3 +202,62 @@ class TestCreateCustomPrompt:
         assert any("Back" in m for m in msgs)
         assert any("Cancel" in m for m in msgs)
         assert any("prompt_show" in m for m in msgs)
+
+
+# ── example_prompt ────────────────────────────────────────────────────────────
+
+class TestExamplePrompt:
+    def _make_prompt_with_mock(self):
+        p = make_prompt()
+        p.prompt = MagicMock()  # example_prompt delegates to self.prompt
+        return p
+
+    def test_four_items_creates_one_group(self):
+        p = self._make_prompt_with_mock()
+        p.example_prompt(["a", "b", "c", "d"])
+        _, _, _, _, groups, _ = p.prompt.create_custom_p.call_args[0]
+        assert len(groups) == 1
+        assert len(groups[0]) == 4
+
+    def test_five_items_creates_two_groups(self):
+        p = self._make_prompt_with_mock()
+        p.example_prompt(["a", "b", "c", "d", "e"])
+        _, _, _, _, groups, _ = p.prompt.create_custom_p.call_args[0]
+        assert len(groups) == 2
+        assert len(groups[0]) == 4
+        assert len(groups[1]) == 1
+
+    def test_eight_items_creates_two_groups_of_four(self):
+        p = self._make_prompt_with_mock()
+        p.example_prompt(["a", "b", "c", "d", "e", "f", "g", "h"])
+        _, _, _, _, groups, _ = p.prompt.create_custom_p.call_args[0]
+        assert len(groups) == 2
+        assert all(len(g) == 4 for g in groups)
+
+    def test_button_styles_alternate_primary_secondary(self):
+        p = self._make_prompt_with_mock()
+        p.example_prompt(["x", "y"])
+        _, _, _, _, groups, _ = p.prompt.create_custom_p.call_args[0]
+        styles = [btn[2] for btn in groups[0]]
+        assert styles[0] == "primary"
+        assert styles[1] == "secondary"
+
+    def test_button_command_contains_item_name(self):
+        p = self._make_prompt_with_mock()
+        p.example_prompt(["lane1"])
+        _, _, _, _, groups, _ = p.prompt.create_custom_p.call_args[0]
+        cmd = groups[0][0][1]
+        assert "lane1" in cmd
+
+    def test_back_button_is_passed_as_footer(self):
+        p = self._make_prompt_with_mock()
+        p.example_prompt(["x"])
+        _, _, _, _, _, back = p.prompt.create_custom_p.call_args[0]
+        assert len(back) == 1
+        assert back[0][0] == "Back"
+
+    def test_cancel_is_enabled(self):
+        p = self._make_prompt_with_mock()
+        p.example_prompt(["x"])
+        _, _, _, cancel, _, _ = p.prompt.create_custom_p.call_args[0]
+        assert cancel is True

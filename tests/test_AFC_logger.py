@@ -208,6 +208,20 @@ class TestLoggingMethods:
         formatted = lg.logger.error.call_args[0][0]
         assert "my_func" in formatted
 
+    def test_error_with_traceback_logs_each_line(self):
+        lg, afc = self._make_lg_with_mocked_logger()
+        lg.send_callback = MagicMock()
+        lg.error("Something broke", traceback="Traceback line 1\nTraceback line 2")
+        # Called once for the message + once per traceback line (2)
+        assert lg.logger.error.call_count >= 3
+
+    def test_debug_with_print_debug_sends_callback(self):
+        lg, afc = self._make_lg_with_mocked_logger()
+        lg.print_debug_console = True
+        lg.send_callback = MagicMock()
+        lg.debug("debug message")
+        lg.send_callback.assert_called()
+
     def test_raw_sends_callback(self):
         lg, _ = self._make_lg_with_mocked_logger()
         lg.send_callback = MagicMock()
@@ -234,3 +248,77 @@ class TestShutdown:
         logger, _, _ = _make_logger()
         assert logger.afc_ql is None
         logger.shutdown()  # should not raise
+
+
+# ── AFC_QueueListener ─────────────────────────────────────────────────────────
+
+class TestAFCQueueListener:
+    def test_queue_listener_init_calls_file_handler_init(self, tmp_path):
+        from extras.AFC_logger import AFC_QueueListener
+        filename = str(tmp_path / "afc_test.log")
+        with patch("logging.handlers.TimedRotatingFileHandler.__init__", return_value=None):
+            ql = AFC_QueueListener(filename)
+        assert ql is not None
+
+    def test_queue_listener_has_bg_queue_after_init(self, tmp_path):
+        import queue as _queue
+        from extras.AFC_logger import AFC_QueueListener
+        filename = str(tmp_path / "afc_test.log")
+        with patch("logging.handlers.TimedRotatingFileHandler.__init__", return_value=None):
+            ql = AFC_QueueListener(filename)
+        assert hasattr(ql, "bg_queue")
+        assert isinstance(ql.bg_queue, _queue.Queue)
+
+
+# ── AFC_logger init with log_file ─────────────────────────────────────────────
+
+class TestAFCLoggerInitWithLogFile:
+    def test_init_with_log_file_creates_afc_ql(self, tmp_path):
+        import queue as _queue
+        log_path = str(tmp_path / "klippy.log")
+        printer = _make_printer(log_file=log_path)
+        afc = _make_afc_obj()
+        with patch("extras.AFC_logger.AFC_QueueListener") as mock_ql_cls:
+            instance = MagicMock()
+            instance.bg_queue = _queue.Queue()
+            mock_ql_cls.return_value = instance
+            lg = AFC_logger(printer, afc)
+        assert lg.afc_ql is instance
+        mock_ql_cls.assert_called_once()
+
+    def test_init_with_log_file_adds_queue_handler(self, tmp_path):
+        import queue as _queue
+        import logging
+        # Clear any handlers added by previous tests on the singleton "AFC" logger
+        logging.getLogger("AFC").handlers.clear()
+        log_path = str(tmp_path / "klippy.log")
+        printer = _make_printer(log_file=log_path)
+        afc = _make_afc_obj()
+        with patch("extras.AFC_logger.AFC_QueueListener") as mock_ql_cls:
+            instance = MagicMock()
+            instance.bg_queue = _queue.Queue()
+            mock_ql_cls.return_value = instance
+            lg = AFC_logger(printer, afc)
+        assert hasattr(lg, "afc_queue_handler")
+
+    def test_init_with_log_file_does_not_create_ql_when_handler_exists(self, tmp_path):
+        """When logger already has a QueueHandler, afc_ql is not created again."""
+        import queue as _queue
+        from queuelogger import QueueHandler
+        log_path = str(tmp_path / "klippy.log")
+        printer = _make_printer(log_file=log_path)
+        afc = _make_afc_obj()
+        # Pre-add a QueueHandler so the `if not any(...)` branch is False
+        q = _queue.Queue()
+        existing_handler = QueueHandler(q)
+        logger_name = "AFC"
+        import logging
+        logging.getLogger(logger_name).addHandler(existing_handler)
+        try:
+            with patch("extras.AFC_logger.AFC_QueueListener") as mock_ql_cls:
+                lg = AFC_logger(printer, afc)
+            # afc_ql should remain None since handler already existed
+            assert lg.afc_ql is None
+            mock_ql_cls.assert_not_called()
+        finally:
+            logging.getLogger(logger_name).removeHandler(existing_handler)

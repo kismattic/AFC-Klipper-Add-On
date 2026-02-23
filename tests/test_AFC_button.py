@@ -195,3 +195,38 @@ class TestButtonCallbackLongPress:
         btn._button_callback(101.5, False)
         btn.afc.LANE_UNLOAD.assert_called_once_with(btn.lane_obj)
         btn.afc.TOOL_UNLOAD.assert_not_called()
+
+
+# ── __init__ via MockConfig ───────────────────────────────────────────────────
+
+class TestAFCButtonInit:
+    def test_init_registers_ready_event_handler(self):
+        from tests.conftest import MockConfig, MockPrinter, MockAFC
+        afc = MockAFC()
+        printer = MockPrinter(afc=afc)
+        config = MockConfig(name="AFC_button lane1", printer=printer,
+                            values={"pin": "PA0", "long_press_duration": 1.2})
+        btn = AFCButton(config)
+        assert "klippy:ready" in printer._event_handlers
+
+    def test_init_sets_lane_id_from_config_name(self):
+        from tests.conftest import MockConfig, MockPrinter, MockAFC
+        afc = MockAFC()
+        printer = MockPrinter(afc=afc)
+        config = MockConfig(name="AFC_button lane_x", printer=printer,
+                            values={"pin": "PB1", "long_press_duration": 1.0})
+        btn = AFCButton(config)
+        assert btn.lane_id == "lane_x"
+
+    def test_init_registers_button_callback(self):
+        from tests.conftest import MockConfig, MockPrinter, MockAFC
+        afc = MockAFC()
+        printer = MockPrinter(afc=afc)
+        buttons_mock = MagicMock()
+        printer._objects["buttons"] = buttons_mock
+        config = MockConfig(name="AFC_button lane1", printer=printer,
+                            values={"pin": "PC2", "long_press_duration": 1.2})
+        btn = AFCButton(config)
+        buttons_mock.register_buttons.assert_called_once()
+        call_args = buttons_mock.register_buttons.call_args[0]
+        assert "PC2" in call_args[0]
