@@ -44,7 +44,7 @@ class afcBoxTurtle(afcUnit):
         firstLeg = '<span class=warning--text>|</span><span class=error--text>_</span>'
         secondLeg = firstLeg + '<span class=warning--text>|</span>'
         self.logo ='<span class=success--text>R  _____     ____\n'
-        self.logo+='E /      \  |  </span><span class=info--text>o</span><span class=success--text> | \n'
+        self.logo+='E /      \\  |  </span><span class=info--text>o</span><span class=success--text> | \n'
         self.logo+='A |       |/ ___/ \n'
         self.logo+='D |_________/     \n'
         self.logo+='Y {first}{second} {first}{second}\n'.format(first=firstLeg, second=secondLeg)
@@ -52,10 +52,10 @@ class afcBoxTurtle(afcUnit):
 
         self.logo_error ='<span class=error--text>E  _ _   _ _\n'
         self.logo_error+='R |_|_|_|_|_|\n'
-        self.logo_error+='R |         \____\n'
-        self.logo_error+='O |              \ \n'
-        self.logo_error+='R |          |\ <span class=secondary--text>X</span> |\n'
-        self.logo_error+='! \_________/ |___|</span>\n'
+        self.logo_error+='R |         \\____\n'
+        self.logo_error+='O |              \\ \n'
+        self.logo_error+='R |          |\\ <span class=secondary--text>X</span> |\n'
+        self.logo_error+='! \\_________/ |___|</span>\n'
         self.logo_error+= '  ' + self.name + '\n'
 
     def _move_lane(self, lane: AFCLane|AFCExtruderStepper, delay: float,
@@ -77,7 +77,7 @@ class afcBoxTurtle(afcUnit):
             self.afc.reactor.pause(self.afc.reactor.monotonic() + 0.7)
         return lane.load_state
 
-    def system_Test(self, cur_lane, delay, assignTcmd, enable_movement):
+    def system_Test(self, cur_lane: AFCLane|AFCExtruderStepper, delay, assignTcmd, enable_movement):
         msg = ''
         succeeded = True
 
@@ -108,15 +108,21 @@ class afcBoxTurtle(afcUnit):
                 msg +="<span class=success--text> AND LOADED</span>"
                 self.afc.function.afc_led(cur_lane.led_spool_illum, cur_lane.led_spool_index)
 
-                if cur_lane.tool_loaded:
+                if (cur_lane.tool_loaded
+                    and cur_lane.extruder_obj.lane_loaded == cur_lane.name):
+                    ramming_loaded = False
+                    if cur_lane.extruder_obj.tool_start == "buffer":
+                        ramming_loaded = self._buffer_toolhead_load_check(cur_lane)
                     if (cur_lane.get_toolhead_pre_sensor_state() == True
-                        or cur_lane.extruder_obj.tool_start == "buffer"
+                        or ramming_loaded
                         or cur_lane.extruder_obj.tool_end_state):
                         if cur_lane.extruder_obj.lane_loaded == cur_lane.name:
                             self.afc.current = cur_lane.name
                             cur_lane.sync_to_extruder()
                             msg +="<span class=primary--text> in ToolHead</span>"
-                            if cur_lane.extruder_obj.tool_start == "buffer":
+                            if (cur_lane.extruder_obj.tool_start == "buffer"
+                                and (not self.afc.homing_enabled
+                                     or not cur_lane.unit_obj.enable_buffer_tool_check)):
                                 msg += "<span class=warning--text>\n Ram sensor enabled, confirm tool is loaded</span>"
 
                             if self.afc.function.get_current_lane() == cur_lane.name:
