@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Armored Turtle Automated Filament Changer
 #
-# Copyright (C) 2024 Armored Turtle
+# Copyright (C) 2024-2026 Armored Turtle
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
@@ -33,18 +33,36 @@ function show_help() {
 
 function copy_config() {
   mkdir -p "${afc_config_dir}"
-  cp ${afc_path}/config/AFC.cfg "${afc_config_dir}/"
-  cp ${afc_path}/config/AFC_Macro_Vars.cfg "${afc_config_dir}/"
+  cp "${afc_path}/config/AFC.cfg" "${afc_config_dir}/"
+  cp "${afc_path}/config/AFC_Macro_Vars.cfg" "${afc_config_dir}/"
   mkdir -p "${afc_config_dir}/mcu"
-  cp -R ${afc_path}/config/macros "${afc_config_dir}/"
+  cp -R "${afc_path}/config/macros" "${afc_config_dir}/"
 }
 
 get_git_version() {
-  cd "$afc_path"
+  local git_hash
+  local afc_py_version
+  cd "$afc_path" || exit
 	git_hash=$(git -C . rev-parse --short HEAD)
 	afc_py_version=$(grep "AFC_VERSION=" "${afc_path}/extras/AFC.py" | cut -d '=' -f2 | tr -d ' "')
 	afc_version="${afc_py_version}-${git_hash}"
-	cd - > /dev/null
+	cd - > /dev/null || exit
+}
+
+check_for_uncommitted_changes() {
+  echo "→ Checking for uncommitted changes…"
+    if ! git -C "${afc_path}" diff --quiet || \
+       ! git -C "${afc_path}" diff --quiet --cached; then
+      echo "❌ You have uncommitted changes in ${afc_path}."
+      echo "   Please commit or stash them before running this script."
+      echo ""
+      echo "💡 To discard your changes and reset the branch:"
+      echo "   cd \"${afc_path}\""
+      echo "   git checkout ${branch}"
+      echo "   git reset --hard origin/${branch}"
+      echo "   git clean -fd"
+      exit 1
+    fi
 }
 
 clone_and_maybe_restart() {
@@ -61,19 +79,7 @@ clone_and_maybe_restart() {
     echo "→ Switching to branch '${branch}'…"
     git -C "${afc_path}" checkout --quiet "${branch}"
 
-    echo "→ Checking for uncommitted changes…"
-    if ! git -C "${afc_path}" diff --quiet || \
-       ! git -C "${afc_path}" diff --quiet --cached; then
-      echo "❌ You have uncommitted changes in ${afc_path}."
-      echo "   Please commit or stash them before running this script."
-      echo ""
-      echo "💡 To discard your changes and reset the branch:"
-      echo "   cd \"${afc_path}\""
-      echo "   git checkout ${branch}"
-      echo "   git reset --hard origin/${branch}"
-      echo "   git clean -fd"
-      exit 1
-    fi
+    check_for_uncommitted_changes
 
     echo "→ Fetching updates in ${afc_path}…"
     git -C "${afc_path}" fetch --prune --quiet
@@ -120,7 +126,7 @@ exclude_from_klipper_git() {
   local EXCLUDE_FILE="${klipper_dir}/.git/info/exclude"
 
   # Find all .py files in the extras directory and add them to the exclude file if they are not already present
-  find "$EXTRAS_DIR" -type f -name "*.py" | while read -r file; do
+  find "$EXTRAS_DIR" -type f -name "AFC*.py" | while read -r file; do
     # Adjust the file path to the required format
     local relative_path="klippy/extras/$(basename "$file")"
     if ! grep -Fxq "$relative_path" "$EXCLUDE_FILE"; then
@@ -145,6 +151,8 @@ restart_service() {
 restart_klipper() {
   if query_printer_status; then
     restart_service klipper
+  else
+    print_msg WARNING "Your printer is not idle/ready, or its status could not be confirmed. Automatic Klipper restart has been skipped; please restart the Klipper service manually once the printer is idle."
   fi
 }
 
@@ -171,9 +179,7 @@ function auto_update() {
 
 
 remove_vars_tool_file() {
-  if [ -f "${afc_config_dir}/*.tool" ]; then
-    rm "${afc_config_dir}/*.tool"
-  fi
+  rm -f "${afc_config_dir}"/*.tool
 }
 
 stop_service() {
@@ -224,5 +230,15 @@ del_var_file() {
 check_for_k1() {
   if grep -Fqs "ID=buildroot" /etc/os-release; then
     is_k1_os="True"
+  fi
+}
+
+check_for_zip_install() {
+  if [ ! -d "${afc_path}/.git" ]; then
+    export git_install="False"
+    print_msg WARNING "AFC-Klipper-Add-On appears to have been installed via ZIP file."
+    print_msg WARNING "Some features may not work as expected without a Git installation."
+    print_msg WARNING "Any updates will require manual reinstallation via ZIP file."
+    read -p "Press Enter to continue..."
   fi
 }

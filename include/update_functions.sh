@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Armored Turtle Automated Filament Changer
 #
-# Copyright (C) 2024 Armored Turtle
+# Copyright (C) 2024-2026 Armored Turtle
 #
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
@@ -29,13 +29,24 @@ AFC Macros update failed.
       fi
     fi
   fi
+  check_init_symlink
   link_extensions
   remove_t_macros
   remove_velocity
-  update_message+="""
+  if [ "$git_install" == "True" ]; then
+    if [ "$test_mode" == "False" ]; then
+      exclude_from_klipper_git
+    fi
+    update_message+="""
 AFC Klipper Add-On updated successfully with version v${afc_version}.
 """
-  export update_message
+    export update_message
+  else
+    update_message+="""
+AFC Klipper Add-On update process completed.
+"""
+    export update_message
+  fi
   files_updated_or_installed="True"
 }
 
